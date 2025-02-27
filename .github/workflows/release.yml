@@ -19,8 +19,8 @@ jobs:
       - id: tag
         name: Determine tag
         run: |
-          version="$(head -n 1 src/Synadia.Orbit.DirectGet/version.txt)"
-          ref_name="DirectGet/v$version"
+          version="$(head -n 1 src/Synadia.Orbit.JetStream.Extensions/version.txt)"
+          ref_name="JetStream.Extensions/v$version"
           create=true
           if [ "$(git ls-remote origin "refs/tags/$ref_name" | wc -l)" = "1" ]; then
             create=false
@@ -36,21 +36,15 @@ jobs:
 
       - if: ${{ fromJSON(steps.tag.outputs.create) }}
         name: Pack
-        working-directory: ./src/Synadia.Orbit.DirectGet
+        working-directory: ./src/Synadia.Orbit.JetStream.Extensions
         # https://learn.microsoft.com/en-us/nuget/create-packages/symbol-packages-snupkg
         # https://devblogs.microsoft.com/dotnet/producing-packages-with-source-link/
         run: |
           dotnet pack -c Release -o dist -p:IncludeSymbols=true -p:SymbolPackageFormat=snupkg -p:ContinuousIntegrationBuild=true
-          echo ">>> dir:"
-          pwd
-          echo ">>> list:"
-          ls -lh
-          echo ">>> list dist:"
-          ls -lh dist
 
       - if: ${{ fromJSON(steps.tag.outputs.create) }}
         name: Push
-        working-directory: ./src/Synadia.Orbit.DirectGet
+        working-directory: ./src/Synadia.Orbit.JetStream.Extensions
         run: |
           cd dist
           ls -lh

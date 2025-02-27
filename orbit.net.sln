@@ -20,9 +20,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7B81447B
 		tests\Directory.Build.props = tests\Directory.Build.props
 	EndProjectSection
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Synadia.Orbit.DirectGet", "src\Synadia.Orbit.DirectGet\Synadia.Orbit.DirectGet.csproj", "{4166181E-1CA1-4378-8CBC-BD46E672623E}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Synadia.Orbit.JetStream.Extensions", "src\Synadia.Orbit.JetStream.Extensions\Synadia.Orbit.JetStream.Extensions.csproj", "{4166181E-1CA1-4378-8CBC-BD46E672623E}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Synadia.Orbit.DirectGet.Test", "tests\Synadia.Orbit.DirectGet.Test\Synadia.Orbit.DirectGet.Test.csproj", "{A9F832F3-6B85-4B0D-9EDA-F649E9AEB32D}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Synadia.Orbit.JetStream.Extensions.Test", "tests\Synadia.Orbit.JetStream.Extensions.Test\Synadia.Orbit.JetStream.Extensions.Test.csproj", "{A9F832F3-6B85-4B0D-9EDA-F649E9AEB32D}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Synadia.Orbit.TestUtils", "tests\Synadia.Orbit.TestUtils\Synadia.Orbit.TestUtils.csproj", "{63355452-E266-45AA-87AE-F8359107B9E1}"
 EndProject

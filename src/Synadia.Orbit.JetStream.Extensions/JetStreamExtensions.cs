@@ -4,9 +4,9 @@
 using System.Runtime.CompilerServices;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
-using Synadia.Orbit.DirectGet.Models;
+using Synadia.Orbit.JetStream.Extensions.Models;
 
-namespace Synadia.Orbit.DirectGet;
+namespace Synadia.Orbit.JetStream.Extensions;
 
 /// <summary>
 /// Provides extension methods for JetStream to enable additional functionality,

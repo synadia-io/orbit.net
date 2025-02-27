@@ -3,7 +3,7 @@
 
 using Synadia.Orbit.TestUtils;
 
-namespace Synadia.Orbit.DirectGet.Test;
+namespace Synadia.Orbit.JetStream.Extensions.Test;
 
 [CollectionDefinition("nats-server")]
 public class NatsServerCollection : ICollectionFixture<NatsServerFixture>

@@ -3,7 +3,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace Synadia.Orbit.DirectGet.Models;
+namespace Synadia.Orbit.JetStream.Extensions.Models;
 
 /// <summary>
 /// Represents a request for batch retrieval of stream messages.

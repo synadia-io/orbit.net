@@ -26,7 +26,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Synadia.Orbit.DirectGet\Synadia.Orbit.DirectGet.csproj"/>
+    <ProjectReference Include="..\..\src\Synadia.Orbit.JetStream.Extensions\Synadia.Orbit.JetStream.Extensions.csproj" />
     <ProjectReference Include="..\Synadia.Orbit.TestUtils\Synadia.Orbit.TestUtils.csproj"/>
   </ItemGroup>
 

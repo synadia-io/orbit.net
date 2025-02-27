@@ -3,9 +3,9 @@
 
 using System.Text.Json.Serialization;
 using NATS.Client.Core;
-using Synadia.Orbit.DirectGet.Models;
+using Synadia.Orbit.JetStream.Extensions.Models;
 
-namespace Synadia.Orbit.DirectGet;
+namespace Synadia.Orbit.JetStream.Extensions;
 
 /// <summary>
 /// Provides a static implementation of a default JSON serializer for specific types

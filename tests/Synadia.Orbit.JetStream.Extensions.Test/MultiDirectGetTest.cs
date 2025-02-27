@@ -5,10 +5,10 @@ using NATS.Client.Core;
 using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
 using NATS.Net;
-using Synadia.Orbit.DirectGet.Models;
+using Synadia.Orbit.JetStream.Extensions.Models;
 using Synadia.Orbit.TestUtils;
 
-namespace Synadia.Orbit.DirectGet.Test;
+namespace Synadia.Orbit.JetStream.Extensions.Test;
 
 [Collection("nats-server")]
 public class MultiDirectGetTest
