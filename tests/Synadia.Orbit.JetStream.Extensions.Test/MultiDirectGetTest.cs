@@ -42,7 +42,7 @@ public class MultiDirectGetTest
 
         StreamMsgBatchGetRequest request = new()
         {
-            Batch = 10,
+            Batch = 8,
             Seq = 1,
         };
 
@@ -52,5 +52,7 @@ public class MultiDirectGetTest
             Assert.Equal(count++, msg.Data);
             _output.WriteLine($"GetBatchDirectAsync: {msg.Data}");
         }
+
+        Assert.Equal(8, count);
     }
 }

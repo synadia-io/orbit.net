@@ -40,6 +40,7 @@ jobs:
         # https://learn.microsoft.com/en-us/nuget/create-packages/symbol-packages-snupkg
         # https://devblogs.microsoft.com/dotnet/producing-packages-with-source-link/
         run: |
+          dotnet test -c Release
           dotnet pack -c Release -o dist -p:IncludeSymbols=true -p:SymbolPackageFormat=snupkg -p:ContinuousIntegrationBuild=true
 
       - if: ${{ fromJSON(steps.tag.outputs.create) }}
