@@ -1,9 +1,6 @@
-// <copyright file="NatsServerProcess.cs" company="Synadia">
-// Copyright (c) Synadia Communications, Inc. All rights reserved.
-// </copyright>
-
 #pragma warning disable VSTHRD103
 #pragma warning disable VSTHRD105
+#pragma warning disable SA1636
 #pragma warning disable SA1512
 
 // ReSharper disable SuggestVarOrType_BuiltInTypes
@@ -11,8 +8,6 @@
 // ReSharper disable NotAccessedField.Local
 // ReSharper disable UseObjectOrCollectionInitializer
 // ReSharper disable InconsistentNaming
-
-namespace Synadia.Orbit.TestUtils;
 
 using System;
 using System.ComponentModel;
@@ -23,6 +18,8 @@ using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+
+namespace Synadia.Orbit.TestUtils;
 
 public class NatsServerProcess : IAsyncDisposable, IDisposable
 {
@@ -95,14 +92,16 @@ public class NatsServerProcess : IAsyncDisposable, IDisposable
         }
         else
         {
-            process.OutputDataReceived += (_, e) => { };
-            process.ErrorDataReceived += (_, e) => { };
+            process.OutputDataReceived += (_, _) => { };
+            process.ErrorDataReceived += (_, _) => { };
         }
 
         process.Start();
 
         if (isWindows)
+        {
             ChildProcessTracker.AddProcess(process);
+        }
 
         // if (isLoggingEnabled)
         {
@@ -183,7 +182,9 @@ public class NatsServerProcess : IAsyncDisposable, IDisposable
             }
 
             if (_process.WaitForExit(1_000))
+            {
                 break;
+            }
         }
 
         for (var i = 0; i < 3; i++)
@@ -210,7 +211,7 @@ public class NatsServerProcess : IAsyncDisposable, IDisposable
 /// This feature requires Windows 8 or greater. On Windows 7, nothing is done.</summary>
 /// <remarks>References:
 ///  https://stackoverflow.com/a/4657392/386091
-///  https://stackoverflow.com/a/9164742/386091 </remarks>
+///  https://stackoverflow.com/a/9164742/386091.</remarks>
 #pragma warning disable SA1204
 #pragma warning disable SA1129
 #pragma warning disable SA1201
@@ -220,20 +221,23 @@ public class NatsServerProcess : IAsyncDisposable, IDisposable
 #pragma warning disable SA1308
 #pragma warning disable SA1413
 #pragma warning disable SA1121
+#pragma warning disable SA1402
 public static class ChildProcessTracker
 {
     /// <summary>
     /// Add the process to be tracked. If our current process is killed, the child processes
     /// that we are tracking will be automatically killed, too. If the child process terminates
     /// first, that's fine, too.</summary>
-    /// <param name="process"></param>
+    /// <param name="process">Process.</param>
     public static void AddProcess(Process process)
     {
         if (s_jobHandle != IntPtr.Zero)
         {
             var success = AssignProcessToJobObject(s_jobHandle, process.Handle);
             if (!success && !process.HasExited)
+            {
                 throw new Win32Exception();
+            }
         }
     }
 
@@ -245,7 +249,9 @@ public static class ChildProcessTracker
         //  https://stackoverflow.com/a/4232259/386091
         //  https://stackoverflow.com/a/9507862/386091
         if (Environment.OSVersion.Version < new Version(6, 2))
+        {
             return;
+        }
 
         // The job name is optional (and can be null), but it helps with diagnostics.
         //  If it's not null, it has to be unique. Use SysInternals' Handle command-line
@@ -297,6 +303,7 @@ public static class ChildProcessTracker
     private static readonly IntPtr s_jobHandle;
 }
 
+#pragma warning disable SA1602
 public enum JobObjectInfoType
 {
     AssociateCompletionPortInformation = 7,

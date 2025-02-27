@@ -1,9 +1,21 @@
-﻿using System.Text.Json.Serialization;
+﻿// Copyright (c) Synadia Communications, Inc. All rights reserved.
+// Licensed under the Apache License, Version 2.0.
 
+using System.Text.Json.Serialization;
+
+namespace Synadia.Orbit.DirectGet.Models;
+
+/// <summary>
+/// Represents a request for batch retrieval of stream messages.
+/// </summary>
+/// <remarks>
+/// This class is used to specify parameters for retrieving multiple messages from a stream in batch mode.
+/// It includes options to define the number of messages, message size, starting sequence, and other optional filters.
+/// </remarks>
 public record StreamMsgBatchGetRequest
 {
     /// <summary>
-    /// The maximum amount of messages to be returned for this request
+    /// Gets or sets the maximum number of messages to be returned for this request.
     /// </summary>
     [JsonPropertyName("batch")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
@@ -11,7 +23,7 @@ public record StreamMsgBatchGetRequest
     public ulong Batch { get; set; }
 
     /// <summary>
-    /// The maximum amount of returned bytes for this request.
+    /// Gets or sets the maximum number of returned bytes for this request.
     /// </summary>
     [JsonPropertyName("max_bytes")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
@@ -19,7 +31,7 @@ public record StreamMsgBatchGetRequest
     public ulong MaxBytes { get; set; }
 
     /// <summary>
-    /// The minimum sequence for returned message
+    /// Gets or sets the minimum sequence for returned messages.
     /// </summary>
     [JsonPropertyName("seq")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
@@ -27,35 +39,28 @@ public record StreamMsgBatchGetRequest
     public ulong Seq { get; set; }
 
     /// <summary>
-    /// The minimum start time for returned message
+    /// Gets or sets the minimum start time for returned messages.
     /// </summary>
     [JsonPropertyName("start_time")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public DateTimeOffset StartTime { get; set; }
 
     /// <summary>
-    /// The subject used filter messages that should be returned
+    /// Gets or sets the subject used filter messages that should be returned.
     /// </summary>
     [JsonPropertyName("next_by_subj")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-#if NET6_0
-    public string? NextBySubject { get; set; } = default!;
-#else
-#pragma warning disable SA1206
     public string? NextBySubject { get; set; }
 
-#pragma warning restore SA1206
-#endif
-
     /// <summary>
-    /// Return last messages mathing the subjects
+    /// Gets or sets the list of subjects for which the last message in each category will be retrieved.
     /// </summary>
     [JsonPropertyName("multi_last")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string[]? MultiLastBySubjects { get; set; }
 
     /// <summary>
-    /// Return message after sequence
+    /// Gets or sets the maximum sequence number up to which messages should be retrieved in a batch request.
     /// </summary>
     [JsonPropertyName("up_to_seq")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
@@ -63,7 +68,7 @@ public record StreamMsgBatchGetRequest
     public ulong UpToSequence { get; set; }
 
     /// <summary>
-    /// Return message after time
+    /// Gets or sets the maximum timestamp up to which messages should be retrieved in the batch request.
     /// </summary>
     [JsonPropertyName("up_to_time")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]

@@ -1,7 +1,11 @@
+// Copyright (c) Synadia Communications, Inc. All rights reserved.
+// Licensed under the Apache License, Version 2.0.
+
 using NATS.Client.Core;
 using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
 using NATS.Net;
+using Synadia.Orbit.DirectGet.Models;
 using Synadia.Orbit.TestUtils;
 
 namespace Synadia.Orbit.DirectGet.Test;
@@ -29,7 +33,7 @@ public class MultiDirectGetTest
 
         CancellationToken ct = TestContext.Current.CancellationToken;
 
-        await js.CreateStreamAsync(new StreamConfig(name, [suject]){AllowDirect = true}, ct);
+        await js.CreateStreamAsync(new StreamConfig(name, [suject]) { AllowDirect = true }, ct);
 
         for (int i = 0; i < 10; i++)
         {

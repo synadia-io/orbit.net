@@ -1,24 +1,10 @@
-using Xunit;
-
-namespace Synadia.Orbit.TestUtils;
+// Copyright (c) Synadia Communications, Inc. All rights reserved.
+// Licensed under the Apache License, Version 2.0.
 
 using System;
 using System.Threading;
 
-public class BaseNatsServerFixture : IDisposable
-{
-    private readonly NatsServerProcess _server;
-    private int _next;
-
-    protected BaseNatsServerFixture(string? config = default) => _server = NatsServerProcess.Start(config: config);
-
-    public string Url => _server.Url;
-
-    public string GetNextId() => $"test{Interlocked.Increment(ref _next)}";
-
-    public void Dispose() => _server.Dispose();
-}
-
+namespace Synadia.Orbit.TestUtils;
 
 // https://xunit.net/docs/shared-context#collection-fixture
 public class NatsServerFixture : IDisposable

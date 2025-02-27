@@ -4,13 +4,18 @@
 using System.Runtime.CompilerServices;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
+using Synadia.Orbit.DirectGet.Models;
 
 namespace Synadia.Orbit.DirectGet;
 
+/// <summary>
+/// Provides extension methods for JetStream to enable additional functionality,
+/// such as requesting direct batch messages.
+/// </summary>
 public static class JetStreamExtensions
 {
     /// <summary>
-    /// Request a direct batch message
+    /// Request a direct batch message.
     /// </summary>
     /// <param name="context">JetStream Context.</param>
     /// <param name="stream">Stream name.</param>
@@ -18,8 +23,8 @@ public static class JetStreamExtensions
     /// <param name="serializer">Serializer to use for the message type.</param>
     /// <param name="cancellationToken">A <see cref="CancellationToken"/> used to cancel the API call.</param>
     /// <typeparam name="T">Message type to deserialize.</typeparam>
-    /// <exception cref="InvalidOperationException">There was an issue, stream must have allow direct set.</exception>
-    /// <returns>Async enumeration to be used in await foreach.</returns>
+    /// <exception cref="NatsNoRespondersException">Stream must have the allow-direct set.</exception>
+    /// <returns>Async enumeration to be used in an await-foreach.</returns>
     public static async IAsyncEnumerable<NatsMsg<T>> GetBatchDirectAsync<T>(
         this INatsJSContext context,
         string stream,
