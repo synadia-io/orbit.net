@@ -1,0 +1,13 @@
+<Project>
+  <Import Project="..\Directory.Build.props"/>
+
+  <PropertyGroup>
+    <Version>$([System.IO.File]::ReadAllText("$(MSBuildProjectDirectory)/version.txt"))</Version>
+    <PackageReadmeFile>PACKAGE.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildProjectDirectory)/PACKAGE.md" Pack="true" PackagePath=""/>
+  </ItemGroup>
+
+</Project>
