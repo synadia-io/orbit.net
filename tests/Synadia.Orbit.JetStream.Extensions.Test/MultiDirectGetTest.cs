@@ -26,6 +26,16 @@ public class MultiDirectGetTest
     public async Task Get_many_messages()
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
+
+        await connection.ConnectAsync();
+
+        // TODO: do proper version check
+        if (!connection.ServerInfo!.Version.StartsWith("2.11."))
+        {
+            _output.WriteLine($"Unsupported server version: {connection.ServerInfo!.Version}");
+            return;
+        }
+
         INatsJSContext js = connection.CreateJetStreamContext();
         string prefix = _server.GetNextId();
         string name = $"{prefix}S1";
