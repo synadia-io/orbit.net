@@ -88,6 +88,9 @@ jobs:
       - name: Check nats-server
         run: nats-server -v
 
+      - name: Build
+        run: dotnet build -c Release
+
       - name: Test
         run: |
           tasklist | grep -i nats-server && taskkill -F -IM nats-server.exe
