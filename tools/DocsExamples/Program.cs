@@ -10,10 +10,10 @@ if (args.Length != 1)
     string commands = string.Join("|",
         Assembly.GetExecutingAssembly()
             .GetTypes()
-            .Where(t => t.Name.Replace("Cmd", string.Empty).StartsWith("Cmd"))
-            .Select(t => t.Name.ToLowerInvariant())
+            .Where(t => t.Name.StartsWith("Example"))
+            .Select(t => t.Name.Replace("Example", string.Empty).ToLowerInvariant())
             .ToArray());
-    Console.Error.WriteLine($"Usage: OrbitPublish [{commands}]");
+    Console.Error.WriteLine($"Usage: DocsExamples [{commands}]");
     return 2;
 }
 
@@ -21,7 +21,7 @@ string cmd = args[0];
 
 foreach (Type type in Assembly.GetExecutingAssembly().GetTypes())
 {
-    if (string.Equals(type.Name, $"Cmd{cmd}", StringComparison.OrdinalIgnoreCase))
+    if (string.Equals(type.Name, $"Example{cmd}", StringComparison.OrdinalIgnoreCase))
     {
         if (Activator.CreateInstance(type) is { } runner)
         {
@@ -30,7 +30,8 @@ foreach (Type type in Assembly.GetExecutingAssembly().GetTypes())
             {
                 if (runMethod.Invoke(runner, null) is { } invoke)
                 {
-                    return await (Task<int>)invoke;
+                    await (Task)invoke;
+                    return 0;
                 }
 
                 Console.Error.WriteLine($"Cannot invoke {type.Name}");

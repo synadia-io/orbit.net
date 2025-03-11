@@ -26,8 +26,6 @@ public class JetStreamPublisher<T>
 
         public bool Acknowledged { get; init; }
 
-        public bool NoResponders { get; init; }
-
         public long Id { get; init; }
 
         public Exception? Error { get; init; }
@@ -117,7 +115,7 @@ public class JetStreamPublisher<T>
                         await channel.Writer.WriteAsync(
                             new MsgStatus<T>
                             {
-                                NoResponders = true,
+                                Error = NoRespondersException.Default,
                                 Id = id,
                                 Subject = msg.Subject,
                                 Data = msg.Data,
@@ -246,6 +244,11 @@ public class CannotFindPublishStatusException(long id) : Exception
 public class NoDataException(long id) : Exception
 {
     public long Id { get; } = id;
+}
+
+public class NoRespondersException : Exception
+{
+    public static readonly NoRespondersException Default = new();
 }
 
 public class MessageTimeoutException(long id, TimeSpan timeout) : Exception
