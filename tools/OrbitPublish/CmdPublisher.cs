@@ -42,10 +42,7 @@ public class CmdPublisher
 
                     if (!status.Acknowledged)
                     {
-                        if (status.NoResponders)
-                        {
-
-                        }
+                        Console.WriteLine($"Error publishing message: {status.Subject}: {status.Error.GetType().Name}");
                     }
                 }
             },
