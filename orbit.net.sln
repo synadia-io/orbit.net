@@ -36,6 +36,14 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "workflows", "workflows", "{
 		.github\workflows\release.yml = .github\workflows\release.yml
 	EndProjectSection
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Synadia.Orbit.JetStream.Publisher", "src\Synadia.Orbit.JetStream.Publisher\Synadia.Orbit.JetStream.Publisher.csproj", "{00D11D00-FD01-4EC3-B327-8777B6B67154}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Synadia.Orbit.JetStream.Publisher.Test", "tests\Synadia.Orbit.JetStream.Publisher.Test\Synadia.Orbit.JetStream.Publisher.Test.csproj", "{6D406238-250E-4E52-B8D4-7D694A81DA9E}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tools", "tools", "{2D30E3B9-67BC-4453-B530-3AF500B594D5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OrbitPublish", "tools\OrbitPublish\OrbitPublish.csproj", "{8166F364-159D-448B-9720-1A5A216297D3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -57,11 +65,26 @@ Global
 		{63355452-E266-45AA-87AE-F8359107B9E1}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{63355452-E266-45AA-87AE-F8359107B9E1}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{63355452-E266-45AA-87AE-F8359107B9E1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{00D11D00-FD01-4EC3-B327-8777B6B67154}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{00D11D00-FD01-4EC3-B327-8777B6B67154}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{00D11D00-FD01-4EC3-B327-8777B6B67154}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{00D11D00-FD01-4EC3-B327-8777B6B67154}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6D406238-250E-4E52-B8D4-7D694A81DA9E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6D406238-250E-4E52-B8D4-7D694A81DA9E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6D406238-250E-4E52-B8D4-7D694A81DA9E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6D406238-250E-4E52-B8D4-7D694A81DA9E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8166F364-159D-448B-9720-1A5A216297D3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8166F364-159D-448B-9720-1A5A216297D3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8166F364-159D-448B-9720-1A5A216297D3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8166F364-159D-448B-9720-1A5A216297D3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{4166181E-1CA1-4378-8CBC-BD46E672623E} = {B8294392-93F3-4406-B96F-A687327CBA15}
 		{A9F832F3-6B85-4B0D-9EDA-F649E9AEB32D} = {7B81447B-C919-4AD9-B2B9-3F89FFD87D8B}
 		{63355452-E266-45AA-87AE-F8359107B9E1} = {7B81447B-C919-4AD9-B2B9-3F89FFD87D8B}
 		{5212FDC1-D3ED-48E4-94E9-65EF9E66F0D0} = {E7B76DF9-7D8C-4A97-9689-B583C189CB28}
+		{00D11D00-FD01-4EC3-B327-8777B6B67154} = {B8294392-93F3-4406-B96F-A687327CBA15}
+		{6D406238-250E-4E52-B8D4-7D694A81DA9E} = {7B81447B-C919-4AD9-B2B9-3F89FFD87D8B}
+		{8166F364-159D-448B-9720-1A5A216297D3} = {2D30E3B9-67BC-4453-B530-3AF500B594D5}
 	EndGlobalSection
 EndGlobal

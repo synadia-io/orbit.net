@@ -11,6 +11,12 @@ permissions:
 jobs:
   nuget:
     name: dotnet
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - pkg: 'JetStream.Extensions'
+          - pkg: 'JetStream.Publisher'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -19,8 +25,8 @@ jobs:
       - id: tag
         name: Determine tag
         run: |
-          version="$(head -n 1 src/Synadia.Orbit.JetStream.Extensions/version.txt)"
-          ref_name="JetStream.Extensions/v$version"
+          version="$(head -n 1 src/Synadia.Orbit.${{ matrix.config.pkg }}/version.txt)"
+          ref_name="${{ matrix.config.pkg }}/v$version"
           create=true
           if [ "$(git ls-remote origin "refs/tags/$ref_name" | wc -l)" = "1" ]; then
             create=false
@@ -29,14 +35,37 @@ jobs:
           echo "create=$create" | tee -a "$GITHUB_OUTPUT"
 
       - if: ${{ fromJSON(steps.tag.outputs.create) }}
+        name: Install nats-server
+        run: |
+          branch=$(curl https://api.mtmk.dev/gh/v1/releases/tag/nats-io/nats-server/latest)
+          for i in 1 2 3
+          do
+            curl -sf https://binaries.nats.dev/nats-io/nats-server/v2@$branch | PREFIX=. sh && break || sleep 30
+          done
+          sudo mv nats-server /usr/local/bin
+
+      - if: ${{ fromJSON(steps.tag.outputs.create) }}
+        name: Check nats-server
+        run: nats-server -v
+
+      - if: ${{ fromJSON(steps.tag.outputs.create) }}
         name: Setup dotnet
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.x'
+          dotnet-version: |
+            8.x
+            9.x
+
+      - if: ${{ fromJSON(steps.tag.outputs.create) }}
+        name: Test
+        working-directory: ./tests/Synadia.Orbit.${{ matrix.config.pkg }}.Test
+        run: |
+          nats-server -v
+          dotnet test -c Release
 
       - if: ${{ fromJSON(steps.tag.outputs.create) }}
         name: Pack
-        working-directory: ./src/Synadia.Orbit.JetStream.Extensions
+        working-directory: ./src/Synadia.Orbit.${{ matrix.config.pkg }}
         # https://learn.microsoft.com/en-us/nuget/create-packages/symbol-packages-snupkg
         # https://devblogs.microsoft.com/dotnet/producing-packages-with-source-link/
         run: |
@@ -44,12 +73,13 @@ jobs:
 
       - if: ${{ fromJSON(steps.tag.outputs.create) }}
         name: Push
-        working-directory: ./src/Synadia.Orbit.JetStream.Extensions
+        working-directory: ./src/Synadia.Orbit.${{ matrix.config.pkg }}
         run: |
           cd dist
           ls -lh
           # this should upload snupkgs in the same folder
-          dotnet nuget push *.nupkg -s https://api.nuget.org/v3/index.json -k "${{ secrets.NUGET_API_KEY }}" --skip-duplicate
+          echo "NUGET PUBLISH *.nupkg"
+          # dotnet nuget push *.nupkg -s https://api.nuget.org/v3/index.json -k "${{ secrets.NUGET_API_KEY }}" --skip-duplicate
 
       - if: ${{ fromJSON(steps.tag.outputs.create) }}
         name: Tag
