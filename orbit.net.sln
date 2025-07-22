@@ -46,6 +46,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OrbitPublish", "tools\Orbit
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DocsExamples", "tools\DocsExamples\DocsExamples.csproj", "{E54DD844-5486-48D2-8D8D-EC8F5D244041}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Synadia.Orbit.KeyValueStore.Extensions", "src\Synadia.Orbit.KeyValueStore.Extensions\Synadia.Orbit.KeyValueStore.Extensions.csproj", "{E5CCE6B0-496A-431B-BF99-D9F3E0EC535F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -83,6 +85,10 @@ Global
 		{E54DD844-5486-48D2-8D8D-EC8F5D244041}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E54DD844-5486-48D2-8D8D-EC8F5D244041}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{E54DD844-5486-48D2-8D8D-EC8F5D244041}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E5CCE6B0-496A-431B-BF99-D9F3E0EC535F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E5CCE6B0-496A-431B-BF99-D9F3E0EC535F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E5CCE6B0-496A-431B-BF99-D9F3E0EC535F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E5CCE6B0-496A-431B-BF99-D9F3E0EC535F}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{4166181E-1CA1-4378-8CBC-BD46E672623E} = {B8294392-93F3-4406-B96F-A687327CBA15}
@@ -93,5 +99,6 @@ Global
 		{6D406238-250E-4E52-B8D4-7D694A81DA9E} = {7B81447B-C919-4AD9-B2B9-3F89FFD87D8B}
 		{8166F364-159D-448B-9720-1A5A216297D3} = {2D30E3B9-67BC-4453-B530-3AF500B594D5}
 		{E54DD844-5486-48D2-8D8D-EC8F5D244041} = {2D30E3B9-67BC-4453-B530-3AF500B594D5}
+		{E5CCE6B0-496A-431B-BF99-D9F3E0EC535F} = {B8294392-93F3-4406-B96F-A687327CBA15}
 	EndGlobalSection
 EndGlobal
