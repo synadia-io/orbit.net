@@ -60,7 +60,8 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          - branch: 'v2.9'
+          - branch: 'v2.10'
+          - branch: 'v2.11'
           - branch: 'latest'
           - branch: 'main'
     runs-on: windows-latest
@@ -70,6 +71,16 @@ jobs:
       NUGET_XMLDOC_MODE: skip
       MSYS_NO_PATHCONV: 1
     steps:
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with: { cache: true }
+
+      - name: Install nats-server
+        run: go install github.com/nats-io/nats-server/v2@${{ matrix.config.branch }}
+
+      - name: Check nats-server
+        run: nats-server -v
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -81,17 +92,6 @@ jobs:
           dotnet-version: |
             8.x
             9.x
-
-      - name: Get nats-server
-        shell: bash
-        run: |
-          mkdir tools-nats-server && cd tools-nats-server
-          branch=$(curl https://api.mtmk.dev/gh/v1/releases/tag/nats-io/nats-server/${{ matrix.config.branch }})
-          curl -sL -o nats-server.exe "https://binaries.nats.dev/binary/github.com/nats-io/nats-server/v2?os=windows&arch=amd64&version=$branch"
-          cygpath -w "$(pwd)" | tee -a "$GITHUB_PATH"
-
-      - name: Check nats-server
-        run: nats-server -v
 
       - name: Build
         run: dotnet build -c Release
