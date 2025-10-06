@@ -9,6 +9,7 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <Version>1.0.0</Version>
+    <OutputType>Exe</OutputType>
   </PropertyGroup>
 
   <ItemGroup>
