@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="NATS.Client.JetStream" Version="2.5.9"/>
+    <PackageReference Include="NATS.Client.JetStream" Version="2.6.10"/>
   </ItemGroup>
 
 </Project>
