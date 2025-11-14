@@ -26,7 +26,7 @@ public static class ParameterizedSubjectExtensions
     /// <returns>A safe, valid NATS subject.</returns>
     /// <exception cref="ArgumentNullException">If subjectTemplate or parameters is null.</exception>
     /// <exception cref="ArgumentException">If subjectTemplate contains \r or \n, or parameter count doesn't match placeholder count.</exception>
-    public static string Parameterize(this string subjectTemplate, params string[] parameters)
+    public static string Parameterize(this string subjectTemplate, params string?[] parameters)
     {
 #if NETSTANDARD
         if (subjectTemplate == null)
@@ -92,6 +92,32 @@ public static class ParameterizedSubjectExtensions
         }
 
         return string.Join(string.Empty, resultParts);
+    }
+
+    /// <summary>
+    /// Ensures the provided value contains none of the disallowed whitespace characters for NATS subject tokens:
+    /// space, tab (\t), carriage return (\r), or line feed (\n).
+    /// Throws if any are present.
+    /// </summary>
+    /// <param name="value">The value to validate.</param>
+    /// <exception cref="ArgumentNullException">If <paramref name="value"/> is null.</exception>
+    /// <exception cref="ArgumentException">If the value contains space, \t, \r, or \n.</exception>
+    public static void EnsureSanitized(this string? value)
+    {
+#if NETSTANDARD
+        if (value == null)
+        {
+            throw new ArgumentNullException(nameof(value));
+        }
+#else
+        ArgumentNullException.ThrowIfNull(value);
+#endif
+
+        // Only check for these characters explicitly as requested: space, tab, CR, LF
+        if (value.IndexOfAny([' ', '\t', '\r', '\n']) >= 0)
+        {
+            throw new ArgumentException("Value cannot contain space (\\s), tab (\\t), carriage return (\\r), or line feed (\\n) characters.", nameof(value));
+        }
     }
 
     /// <summary>

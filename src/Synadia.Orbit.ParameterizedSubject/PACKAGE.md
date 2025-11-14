@@ -90,6 +90,10 @@ namespace Synadia.Orbit.ParameterizedSubject
     {
         // Replaces '?' in subjectTemplate with sanitized parameters in order.
         public static string Parameterize(this string subjectTemplate, params string[] parameters);
+
+        // Validates a value contains no space, tab (\t), carriage return (\r), or line feed (\n).
+        // Throws ArgumentNullException when value is null; ArgumentException when any of those characters are present.
+        public static void EnsureSanitized(this string value);
     }
 }
 ```
@@ -98,6 +102,22 @@ Exceptions:
 - `ArgumentNullException` when `subjectTemplate` or `parameters` is `null` (framework-dependent guard).
 - `ArgumentException` when the template contains whitespace/CR/LF.
 - `ArgumentException` when placeholder and parameter counts differ.
+
+For `EnsureSanitized` specifically:
+- `ArgumentNullException` when `value` is `null`.
+- `ArgumentException` when `value` contains space, `\t`, `\r`, or `\n`.
+
+### EnsureSanitized usage
+
+Use `EnsureSanitized` when you only need to validate inputs (without transforming them) to guarantee they are safe as NATS subject tokens with respect to whitespace:
+
+```csharp
+using Synadia.Orbit.ParameterizedSubject;
+
+"ok".EnsureSanitized();           // no throw
+"v1.2".EnsureSanitized();        // no throw
+"has space".EnsureSanitized();   // throws ArgumentException
+```
 
 ## Testing
 

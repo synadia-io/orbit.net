@@ -1,9 +1,6 @@
 // Copyright (c) Synadia Communications, Inc. All rights reserved.
 // Licensed under the Apache License, Version 2.0.
 
-using Synadia.Orbit.ParameterizedSubject;
-using Xunit;
-
 namespace Synadia.Orbit.ParameterizedSubject.Test;
 
 public class ParameterizedSubjectExtensionsTests
@@ -11,21 +8,21 @@ public class ParameterizedSubjectExtensionsTests
     [Fact]
     public void Parameterize_ReplacesSinglePlaceholder()
     {
-        var actual = "user.login.?".Parameterize("john");
+        string actual = "user.login.?".Parameterize("john");
         Assert.Equal("user.login.john", actual);
     }
 
     [Fact]
     public void Parameterize_ReplacesMultiplePlaceholders_InOrder()
     {
-        var actual = "a.?.b.?".Parameterize("x", "y");
+        string actual = "a.?.b.?".Parameterize("x", "y");
         Assert.Equal("a.x.b.y", actual);
     }
 
     [Fact]
     public void Parameterize_NoPlaceholders_ReturnsTemplate()
     {
-        var actual = "a.b.c".Parameterize();
+        string actual = "a.b.c".Parameterize();
         Assert.Equal("a.b.c", actual);
     }
 
@@ -58,7 +55,7 @@ public class ParameterizedSubjectExtensionsTests
     [InlineData("x*y>z%", "x%2Ay%3Ez%25")]
     public void Parameterize_SanitizesSpecialCharacters(string input, string expectedSanitized)
     {
-        var actual = "a.?".Parameterize(input);
+        string actual = "a.?".Parameterize(input);
         Assert.Equal($"a.{expectedSanitized}", actual);
     }
 
@@ -66,22 +63,22 @@ public class ParameterizedSubjectExtensionsTests
     public void Parameterize_NullParameter_BecomesEmptyToken()
     {
         // Passing a params array explicitly with a single null element
-        var actual = "a.?.b".Parameterize(new string?[] { null }!);
+        string actual = "a.?.b".Parameterize([null]!);
         Assert.Equal("a..b", actual);
     }
 
     [Fact]
     public void Parameterize_EmptyParameter_BecomesEmptyToken()
     {
-        var actual = "x.?".Parameterize(string.Empty);
+        string actual = "x.?".Parameterize(string.Empty);
         Assert.Equal("x.", actual);
     }
 
     [Fact]
     public void Parameterize_LeadingAndTrailingPlaceholders_Work()
     {
-        var actual1 = "?.a".Parameterize("left");
-        var actual2 = "a.?".Parameterize("right");
+        string actual1 = "?.a".Parameterize("left");
+        string actual2 = "a.?".Parameterize("right");
         Assert.Equal("left.a", actual1);
         Assert.Equal("a.right", actual2);
     }
@@ -89,7 +86,36 @@ public class ParameterizedSubjectExtensionsTests
     [Fact]
     public void Parameterize_ConsecutivePlaceholders_ConcatenateParameters()
     {
-        var actual = "pre.??.post".Parameterize("A", "B");
+        string actual = "pre.??.post".Parameterize("A", "B");
         Assert.Equal("pre.AB.post", actual);
+    }
+
+    // === EnsureSanitized tests ===
+    [Theory]
+    [InlineData("abc")]
+    [InlineData("v1.2")] // dot is allowed for EnsureSanitized (only checks for whitespace)
+    [InlineData("*%>")] // wildcards/percent allowed here; only whitespace is disallowed
+    public void EnsureSanitized_ValidInputs_DoNotThrow(string input)
+    {
+        var ex = Record.Exception(input.EnsureSanitized);
+        Assert.Null(ex);
+    }
+
+    [Theory]
+    [InlineData("a b")]
+    [InlineData("a\tb")]
+    [InlineData("a\rb")]
+    [InlineData("a\nb")]
+    public void EnsureSanitized_WithWhitespace_Throws(string input)
+    {
+        var ex = Assert.Throws<ArgumentException>(input.EnsureSanitized);
+        Assert.Contains("Value cannot contain", ex.Message);
+    }
+
+    [Fact]
+    public void EnsureSanitized_Null_ThrowsArgumentNullException()
+    {
+        string? s = null;
+        Assert.Throws<ArgumentNullException>(() => s.EnsureSanitized());
     }
 }
