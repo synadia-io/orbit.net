@@ -44,6 +44,7 @@ jobs:
           dotnet-version: |
             8.x
             9.x
+            10.x
 
       - name: Build
         run: dotnet build -c Release
@@ -92,6 +93,7 @@ jobs:
           dotnet-version: |
             8.x
             9.x
+            10.x
 
       - name: Build
         run: dotnet build -c Release
