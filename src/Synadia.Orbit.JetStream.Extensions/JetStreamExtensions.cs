@@ -15,10 +15,6 @@ namespace Synadia.Orbit.JetStream.Extensions;
 /// </summary>
 public static class JetStreamExtensions
 {
-    private const string NatsSchedule = "Nats-Schedule";
-    private const string NatsScheduleTarget = "Nats-Schedule-Target";
-    private const string NatsScheduleTtl = "Nats-Schedule-TTL";
-
     /// <summary>
     /// Request a direct batch message.
     /// </summary>

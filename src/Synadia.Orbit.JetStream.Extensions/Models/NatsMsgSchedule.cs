@@ -50,14 +50,12 @@ public record NatsMsgSchedule
     public string Target { get; }
 
     /// <summary>
-    /// Gets the optional TTL (Time To Live) in seconds for the scheduled message.
+    /// Gets the optional TTL (Time To Live) in seconds for the message.
     /// </summary>
     /// <remarks>
-    /// If not specified, the TTL is calculated as the time until the scheduled delivery
-    /// plus 60 seconds, ensuring the message survives until at least 1 minute after
-    /// the scheduled delivery time.
+    /// This is the TTL that gets placed on the resulting message, not on the schedule itself.
     /// </remarks>
-    public int? TtlSeconds { get; init; }
+    public TimeSpan? Ttl { get; init; }
 
     /// <summary>
     /// Converts this schedule configuration to NATS headers.
@@ -69,20 +67,14 @@ public record NatsMsgSchedule
         var headers = existingHeaders ?? new NatsHeaders();
 
         // Format: @at 2025-11-25T10:00:00Z
-        headers[NatsScheduleHeader] = $"@at {ScheduleAt:yyyy-MM-ddTHH:mm:ss}Z";
+        headers[NatsScheduleHeader] = $"@at {ScheduleAt.UtcDateTime:yyyy-MM-ddTHH:mm:ss}Z";
         headers[NatsScheduleTargetHeader] = Target;
 
-        var ttl = TtlSeconds ?? CalculateDefaultTtlSeconds();
-        headers[NatsScheduleTtlHeader] = $"{ttl}s";
+        if (Ttl is { } ttl)
+        {
+            headers[NatsScheduleTtlHeader] = $"{(long)ttl.TotalSeconds}s";
+        }
 
         return headers;
-    }
-
-    private int CalculateDefaultTtlSeconds()
-    {
-        var secondsUntilSchedule = (int)(ScheduleAt - DateTimeOffset.UtcNow).TotalSeconds;
-
-        // Ensure at least 60 seconds TTL even if schedule is in the past
-        return Math.Max(60, secondsUntilSchedule + 60);
     }
 }
