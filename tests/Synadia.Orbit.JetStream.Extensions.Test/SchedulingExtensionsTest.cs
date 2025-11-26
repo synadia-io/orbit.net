@@ -51,11 +51,8 @@ public class SchedulingExtensionsTest
         // Act
         var headers = schedule.ToHeaders();
 
-        // Assert - TTL should be approximately 5 minutes + 60 seconds = ~360 seconds
-        var ttlString = headers["Nats-Schedule-TTL"].ToString();
-        Assert.EndsWith("s", ttlString);
-        var ttlSeconds = int.Parse(ttlString.TrimEnd('s'));
-        Assert.InRange(ttlSeconds, 350, 370); // Allow some tolerance for test execution time
+        // Assert - No default TTL set
+        Assert.Empty(headers["Nats-Schedule-TTL"].ToArray());
     }
 
     [Fact]
@@ -68,10 +65,8 @@ public class SchedulingExtensionsTest
         // Act
         var headers = schedule.ToHeaders();
 
-        // Assert - TTL should be at least 60 seconds
-        var ttlString = headers["Nats-Schedule-TTL"].ToString();
-        var ttlSeconds = int.Parse(ttlString.TrimEnd('s'));
-        Assert.True(ttlSeconds >= 60, $"TTL should be at least 60 seconds, but was {ttlSeconds}");
+        // Assert - default TTL should not be set
+        Assert.Empty(headers["Nats-Schedule-TTL"].ToArray());
     }
 
     [Fact]
