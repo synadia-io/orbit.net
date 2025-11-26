@@ -3,7 +3,6 @@
 
 #pragma warning disable
 
-using NATS.Client.Core;
 using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
 using NATS.Net;
@@ -32,7 +31,7 @@ public class ExampleScheduling
         var scheduleAt = DateTimeOffset.UtcNow.AddSeconds(10);
         var schedule = new NatsMsgSchedule(scheduleAt, "events.t1")
         {
-            TtlSeconds = 15, // Optional: override the default TTL
+            Ttl = TimeSpan.FromSeconds(15), // Optional: override the default TTL
         };
 
         Console.WriteLine($"Scheduling message for: {scheduleAt:yyyy-MM-ddTHH:mm:ss}Z");

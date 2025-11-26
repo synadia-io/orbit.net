@@ -29,7 +29,7 @@ public class SchedulingExtensionsTest
         var scheduleAt = new DateTimeOffset(2025, 12, 25, 10, 30, 0, TimeSpan.Zero);
         var schedule = new NatsMsgSchedule(scheduleAt, "events.target")
         {
-            TtlSeconds = 120,
+            Ttl = TimeSpan.FromSeconds(120),
         };
 
         // Act
@@ -79,7 +79,7 @@ public class SchedulingExtensionsTest
     {
         // Arrange
         var scheduleAt = DateTimeOffset.UtcNow.AddMinutes(5);
-        var schedule = new NatsMsgSchedule(scheduleAt, "events.target") { TtlSeconds = 100 };
+        var schedule = new NatsMsgSchedule(scheduleAt, "events.target") { Ttl = TimeSpan.FromSeconds(100) };
         var existingHeaders = new NatsHeaders
         {
             ["Custom-Header"] = "custom-value",
@@ -106,7 +106,7 @@ public class SchedulingExtensionsTest
     {
         // Arrange - use a non-UTC timezone
         var localTime = new DateTimeOffset(2025, 12, 25, 10, 30, 0, TimeSpan.FromHours(5));
-        var schedule = new NatsMsgSchedule(localTime, "events.target") { TtlSeconds = 60 };
+        var schedule = new NatsMsgSchedule(localTime, "events.target") { Ttl = TimeSpan.FromSeconds(60) };
 
         // Act
         var headers = schedule.ToHeaders();
