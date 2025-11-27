@@ -41,7 +41,7 @@ Assert.Equal(8, count);
 A stream can be configured to allow scheduled messages. A scheduled message is a message published
 to a subject that will in turn publish the message to a target subject at a specified time in the future.
 See also [ADR-51: Single scheduled message](https://github.com/nats-io/nats-architecture-and-design/blob/main/adr/ADR-51.md#single-scheduled-message)
-for more details.
+for more details. This feature requires NATS Server 2.12 or later.
 
 ```csharp
 // dotnet add package nats.net
