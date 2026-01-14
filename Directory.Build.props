@@ -3,6 +3,11 @@
     <TargetFrameworks>netstandard2.0;netstandard2.1;net8.0;net9.0;net10.0</TargetFrameworks>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!--
+      CS1591: Missing XML comment for publicly visible type or member
+      SA0001: XML comment analysis disabled due to project configuration (StyleCop)
+    -->
     <NoWarn>$(NoWarn);CS1591;SA0001</NoWarn>
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>$(MSBuildThisFileDirectory)orbit.net.snk</AssemblyOriginatorKeyFile>
@@ -35,10 +40,12 @@
 
   <PropertyGroup Condition="'$(TargetFramework)' == 'netstandard2.0' OR '$(TargetFramework)' == 'netstandard2.1'">
     <IsTrimmable>false</IsTrimmable>
+    <!-- CS8774: Member must have a non-null value when exiting; nullable annotations not fully supported in netstandard -->
     <NoWarn>$(NoWarn);CS8774</NoWarn>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+    <!-- CS8604: Possible null reference argument; nullable annotations not fully supported in netstandard2.0 -->
     <NoWarn>$(NoWarn);CS8604</NoWarn>
   </PropertyGroup>
 

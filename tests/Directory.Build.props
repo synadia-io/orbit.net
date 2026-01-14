@@ -3,8 +3,7 @@
 
   <PropertyGroup>
     <Version>1.0.0</Version>
-
-    <!-- Suppress warnings about missing XML comments -->
+    <!-- SA1600: Elements should be documented (StyleCop); not required for test projects -->
     <NoWarn>$(NoWarn);SA1600</NoWarn>
   </PropertyGroup>
 
