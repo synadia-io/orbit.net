@@ -68,11 +68,7 @@
 <!--    <PackageReference Include="System.Text.Json"/>-->
     <PackageReference Include="System.Threading.Channels"/>
     <PackageReference Include="System.Diagnostics.DiagnosticSource"/>
-    <PackageReference Include="Nullable">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
-    </PackageReference>
-    <PackageReference Include="IsExternalInit">
+    <PackageReference Include="PolySharp">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
     </PackageReference>
@@ -83,7 +79,6 @@
     <PackageReference Include="System.Memory" />
     <PackageReference Include="System.Buffers" />
     <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" />
-    <PackageReference Include="IndexRange" />
   </ItemGroup>
 
 </Project>
