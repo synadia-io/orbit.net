@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="orbit.png">
+  <img src="orbit-small.png">
 </p>
 
 Orbit .NET is a set of independent utilities around NATS ecosystem that aims to
