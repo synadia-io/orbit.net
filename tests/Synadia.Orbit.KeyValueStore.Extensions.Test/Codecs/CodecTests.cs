@@ -62,6 +62,42 @@ public class CodecTests
     }
 
     [Fact]
+    public void NatsBase64KeyCodec_preserves_dots_as_token_separators()
+    {
+        var codec = NatsBase64KeyCodec.Instance;
+
+        // "user/123@example.com" has a dot, so it splits into two tokens:
+        // "user/123@example" and "com"
+        var key = "user/123@example.com";
+        var encoded = codec.EncodeKey(key);
+        var decoded = codec.DecodeKey(encoded);
+
+        Assert.Equal(key, decoded);
+        Assert.Equal("dXNlci8xMjNAZXhhbXBsZQ.Y29t", encoded);
+
+        // "user/123@example" -> "dXNlci8xMjNAZXhhbXBsZQ"
+        // "com" -> "Y29t"
+        _output.WriteLine($"Original: {key}");
+        _output.WriteLine($"Encoded: {encoded}");
+    }
+
+    [Fact]
+    public void NatsBase64KeyCodec_encodes_key_without_dots_as_single_token()
+    {
+        var codec = NatsBase64KeyCodec.Instance;
+
+        // Key without any dots is encoded as a single base64 token
+        var key = "user/123@test";
+        var encoded = codec.EncodeKey(key);
+        var decoded = codec.DecodeKey(encoded);
+
+        Assert.Equal(key, decoded);
+        Assert.DoesNotContain(".", encoded); // No dots since input has no dots
+        _output.WriteLine($"Original: {key}");
+        _output.WriteLine($"Encoded: {encoded}");
+    }
+
+    [Fact]
     public void NatsBase64KeyCodec_preserves_wildcards_in_filter()
     {
         var codec = NatsBase64KeyCodec.Instance;
@@ -124,6 +160,22 @@ public class CodecTests
         var codec = NatsPathKeyCodec.Instance;
 
         Assert.Equal("users.123", codec.EncodeKey("users/123/"));
+    }
+
+    [Fact]
+    public void NatsPathKeyCodec_encodes_config_style_paths()
+    {
+        var codec = NatsPathKeyCodec.Instance;
+
+        // Examples from PACKAGE.md documentation
+        Assert.Equal("_root_.config.database.connection-string", codec.EncodeKey("/config/database/connection-string"));
+        Assert.Equal("_root_.config.database.timeout", codec.EncodeKey("/config/database/timeout"));
+        Assert.Equal("_root_.config.logging.level", codec.EncodeKey("/config/logging/level"));
+
+        // Verify roundtrip
+        Assert.Equal("/config/database/connection-string", codec.DecodeKey("_root_.config.database.connection-string"));
+        Assert.Equal("/config/database/timeout", codec.DecodeKey("_root_.config.database.timeout"));
+        Assert.Equal("/config/logging/level", codec.DecodeKey("_root_.config.logging.level"));
     }
 
     [Fact]
