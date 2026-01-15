@@ -1,21 +1,21 @@
 // Copyright (c) Synadia Communications, Inc. All rights reserved.
 // Licensed under the Apache License, Version 2.0.
 
-namespace Synadia.Orbit.KeyValueStore.Extensions;
+namespace Synadia.Orbit.KeyValueStore.Extensions.Codecs;
 
 /// <summary>
 /// A no-op codec that passes keys through unchanged.
 /// </summary>
-public sealed class NoOpKeyCodec : IFilterableKeyCodec
+public sealed class NatsNoOpKeyCodec : INatsFilterableKeyCodec
 {
-    private NoOpKeyCodec()
+    private NatsNoOpKeyCodec()
     {
     }
 
     /// <summary>
-    /// Gets the singleton instance of the <see cref="NoOpKeyCodec"/>.
+    /// Gets the singleton instance of the <see cref="NatsNoOpKeyCodec"/>.
     /// </summary>
-    public static NoOpKeyCodec Instance { get; } = new();
+    public static NatsNoOpKeyCodec Instance { get; } = new();
 
     /// <inheritdoc/>
     public string EncodeKey(string key) => key;

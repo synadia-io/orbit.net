@@ -3,7 +3,7 @@
 
 using NATS.Client.KeyValueStore;
 
-namespace Synadia.Orbit.KeyValueStore.Extensions;
+namespace Synadia.Orbit.KeyValueStore.Extensions.Codecs;
 
 /// <summary>
 /// Extension methods for <see cref="INatsKVStore"/>.
@@ -16,7 +16,7 @@ public static class NatsKVStoreExtensions
     /// <param name="store">The KV store to wrap.</param>
     /// <param name="keyCodec">The codec to use for key encoding/decoding.</param>
     /// <returns>A new <see cref="INatsKVStore"/> that applies the codec to all key operations.</returns>
-    public static INatsKVStore WithKeyCodec(this INatsKVStore store, IKeyCodec keyCodec)
+    public static INatsKVStore WithKeyCodec(this INatsKVStore store, INatsKeyCodec keyCodec)
     {
         return new NatsKVCodecStore(store, keyCodec);
     }
@@ -29,7 +29,7 @@ public static class NatsKVStoreExtensions
     /// <returns>A new <see cref="INatsKVStore"/> that Base64 encodes all keys.</returns>
     public static INatsKVStore WithBase64Keys(this INatsKVStore store)
     {
-        return new NatsKVCodecStore(store, Base64KeyCodec.Instance);
+        return new NatsKVCodecStore(store, NatsBase64KeyCodec.Instance);
     }
 
     /// <summary>
@@ -43,6 +43,6 @@ public static class NatsKVStoreExtensions
     /// </remarks>
     public static INatsKVStore WithPathKeys(this INatsKVStore store)
     {
-        return new NatsKVCodecStore(store, PathKeyCodec.Instance);
+        return new NatsKVCodecStore(store, NatsPathKeyCodec.Instance);
     }
 }

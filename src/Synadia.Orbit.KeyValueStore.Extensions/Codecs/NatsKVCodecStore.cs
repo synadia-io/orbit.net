@@ -6,7 +6,7 @@ using NATS.Client.Core;
 using NATS.Client.JetStream;
 using NATS.Client.KeyValueStore;
 
-namespace Synadia.Orbit.KeyValueStore.Extensions;
+namespace Synadia.Orbit.KeyValueStore.Extensions.Codecs;
 
 /// <summary>
 /// A wrapper around <see cref="INatsKVStore"/> that applies key encoding/decoding using a codec.
@@ -14,14 +14,14 @@ namespace Synadia.Orbit.KeyValueStore.Extensions;
 public sealed class NatsKVCodecStore : INatsKVStore
 {
     private readonly INatsKVStore _store;
-    private readonly IKeyCodec _keyCodec;
+    private readonly INatsKeyCodec _keyCodec;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NatsKVCodecStore"/> class.
     /// </summary>
     /// <param name="store">The underlying KV store to wrap.</param>
     /// <param name="keyCodec">The codec to use for key encoding/decoding.</param>
-    public NatsKVCodecStore(INatsKVStore store, IKeyCodec keyCodec)
+    public NatsKVCodecStore(INatsKVStore store, INatsKeyCodec keyCodec)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _keyCodec = keyCodec ?? throw new ArgumentNullException(nameof(keyCodec));
@@ -207,7 +207,7 @@ public sealed class NatsKVCodecStore : INatsKVStore
 
     private string EncodeFilter(string filter)
     {
-        if (_keyCodec is IFilterableKeyCodec filterableCodec)
+        if (_keyCodec is INatsFilterableKeyCodec filterableCodec)
         {
             return filterableCodec.EncodeFilter(filter);
         }
@@ -215,7 +215,7 @@ public sealed class NatsKVCodecStore : INatsKVStore
         // Check if filter contains wildcards
         if (filter.Contains("*") || filter.Contains(">"))
         {
-            throw new KeyCodecException($"Codec does not support wildcard filtering. Key: '{filter}'");
+            throw new NatsKeyCodecException($"Codec does not support wildcard filtering. Key: '{filter}'");
         }
 
         return _keyCodec.EncodeKey(filter);

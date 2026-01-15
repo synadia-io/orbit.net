@@ -4,9 +4,10 @@
 using NATS.Client.Core;
 using NATS.Client.KeyValueStore;
 using NATS.Net;
+using Synadia.Orbit.KeyValueStore.Extensions.Codecs;
 using Synadia.Orbit.TestUtils;
 
-namespace Synadia.Orbit.KeyValueStore.Extensions.Test;
+namespace Synadia.Orbit.KeyValueStore.Extensions.Test.Codecs;
 
 [Collection("nats-server")]
 public class CodecTests
@@ -21,9 +22,9 @@ public class CodecTests
     }
 
     [Fact]
-    public void NoOpKeyCodec_passes_through_unchanged()
+    public void NatsNoOpKeyCodec_passes_through_unchanged()
     {
-        var codec = NoOpKeyCodec.Instance;
+        var codec = NatsNoOpKeyCodec.Instance;
 
         Assert.Equal("test.key", codec.EncodeKey("test.key"));
         Assert.Equal("test.key", codec.DecodeKey("test.key"));
@@ -32,9 +33,9 @@ public class CodecTests
     }
 
     [Fact]
-    public void Base64KeyCodec_encodes_each_token_separately()
+    public void NatsBase64KeyCodec_encodes_each_token_separately()
     {
-        var codec = Base64KeyCodec.Instance;
+        var codec = NatsBase64KeyCodec.Instance;
 
         // "hello" in base64url is "aGVsbG8"
         // "world" in base64url is "d29ybGQ"
@@ -46,9 +47,9 @@ public class CodecTests
     }
 
     [Fact]
-    public void Base64KeyCodec_handles_special_characters()
+    public void NatsBase64KeyCodec_handles_special_characters()
     {
-        var codec = Base64KeyCodec.Instance;
+        var codec = NatsBase64KeyCodec.Instance;
 
         // Test with characters that would be invalid in NATS subjects
         var key = "user/123.profile@test";
@@ -61,9 +62,9 @@ public class CodecTests
     }
 
     [Fact]
-    public void Base64KeyCodec_preserves_wildcards_in_filter()
+    public void NatsBase64KeyCodec_preserves_wildcards_in_filter()
     {
-        var codec = Base64KeyCodec.Instance;
+        var codec = NatsBase64KeyCodec.Instance;
 
         var filter = "users.*.profile";
         var encoded = codec.EncodeFilter(filter);
@@ -74,9 +75,9 @@ public class CodecTests
     }
 
     [Fact]
-    public void Base64KeyCodec_preserves_gt_wildcard_in_filter()
+    public void NatsBase64KeyCodec_preserves_gt_wildcard_in_filter()
     {
-        var codec = Base64KeyCodec.Instance;
+        var codec = NatsBase64KeyCodec.Instance;
 
         var filter = "users.>";
         var encoded = codec.EncodeFilter(filter);
@@ -86,9 +87,9 @@ public class CodecTests
     }
 
     [Fact]
-    public void PathKeyCodec_converts_slashes_to_dots()
+    public void NatsPathKeyCodec_converts_slashes_to_dots()
     {
-        var codec = PathKeyCodec.Instance;
+        var codec = NatsPathKeyCodec.Instance;
 
         // Without leading slash
         Assert.Equal("users.123.profile", codec.EncodeKey("users/123/profile"));
@@ -96,9 +97,9 @@ public class CodecTests
     }
 
     [Fact]
-    public void PathKeyCodec_handles_leading_slash()
+    public void NatsPathKeyCodec_handles_leading_slash()
     {
-        var codec = PathKeyCodec.Instance;
+        var codec = NatsPathKeyCodec.Instance;
 
         // With leading slash - should use _root_ prefix
         var encoded = codec.EncodeKey("/users/123/profile");
@@ -109,28 +110,28 @@ public class CodecTests
     }
 
     [Fact]
-    public void PathKeyCodec_handles_root_only()
+    public void NatsPathKeyCodec_handles_root_only()
     {
-        var codec = PathKeyCodec.Instance;
+        var codec = NatsPathKeyCodec.Instance;
 
         Assert.Equal("_root_", codec.EncodeKey("/"));
         Assert.Equal("/", codec.DecodeKey("_root_"));
     }
 
     [Fact]
-    public void PathKeyCodec_trims_trailing_slash()
+    public void NatsPathKeyCodec_trims_trailing_slash()
     {
-        var codec = PathKeyCodec.Instance;
+        var codec = NatsPathKeyCodec.Instance;
 
         Assert.Equal("users.123", codec.EncodeKey("users/123/"));
     }
 
     [Fact]
-    public void KeyChainCodec_applies_codecs_in_order()
+    public void NatsKeyChainCodec_applies_codecs_in_order()
     {
         // Chain: Path -> Base64
         // Input: "/users/123" -> "_root_.users.123" -> "X3Jvb3Rf.dXNlcnM.MTIz"
-        var chain = new KeyChainCodec(PathKeyCodec.Instance, Base64KeyCodec.Instance);
+        var chain = new NatsKeyChainCodec(NatsPathKeyCodec.Instance, NatsBase64KeyCodec.Instance);
 
         var encoded = chain.EncodeKey("/users/123");
         _output.WriteLine($"Encoded: {encoded}");
@@ -141,17 +142,17 @@ public class CodecTests
     }
 
     [Fact]
-    public void KeyChainCodec_requires_at_least_one_codec()
+    public void NatsKeyChainCodec_requires_at_least_one_codec()
     {
-        Assert.Throws<ArgumentException>(() => new KeyChainCodec());
-        Assert.Throws<ArgumentException>(() => new KeyChainCodec(Array.Empty<IKeyCodec>()));
+        Assert.Throws<ArgumentException>(() => new NatsKeyChainCodec());
+        Assert.Throws<ArgumentException>(() => new NatsKeyChainCodec(Array.Empty<INatsKeyCodec>()));
     }
 
     [Fact]
-    public void KeyChainCodec_filter_requires_all_filterable()
+    public void NatsKeyChainCodec_filter_requires_all_filterable()
     {
         // NoOp and Base64 are filterable, so this should work
-        var chain = new KeyChainCodec(NoOpKeyCodec.Instance, Base64KeyCodec.Instance);
+        var chain = new NatsKeyChainCodec(NatsNoOpKeyCodec.Instance, NatsBase64KeyCodec.Instance);
         var result = chain.EncodeFilter("test.*");
         Assert.Contains("*", result);
     }

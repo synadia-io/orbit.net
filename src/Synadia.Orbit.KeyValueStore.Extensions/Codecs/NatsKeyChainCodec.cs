@@ -1,22 +1,22 @@
 // Copyright (c) Synadia Communications, Inc. All rights reserved.
 // Licensed under the Apache License, Version 2.0.
 
-namespace Synadia.Orbit.KeyValueStore.Extensions;
+namespace Synadia.Orbit.KeyValueStore.Extensions.Codecs;
 
 /// <summary>
 /// Applies multiple key codecs in sequence.
 /// Encoding is applied in order (first to last), decoding in reverse order (last to first).
 /// </summary>
-public sealed class KeyChainCodec : IFilterableKeyCodec
+public sealed class NatsKeyChainCodec : INatsFilterableKeyCodec
 {
-    private readonly IKeyCodec[] _codecs;
+    private readonly INatsKeyCodec[] _codecs;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="KeyChainCodec"/> class.
+    /// Initializes a new instance of the <see cref="NatsKeyChainCodec"/> class.
     /// </summary>
     /// <param name="codecs">The codecs to chain together. At least one codec must be provided.</param>
     /// <exception cref="ArgumentException">Thrown when no codecs are provided.</exception>
-    public KeyChainCodec(params IKeyCodec[] codecs)
+    public NatsKeyChainCodec(params INatsKeyCodec[] codecs)
     {
         if (codecs == null || codecs.Length == 0)
         {
@@ -36,9 +36,9 @@ public sealed class KeyChainCodec : IFilterableKeyCodec
             {
                 result = _codecs[i].EncodeKey(result);
             }
-            catch (Exception ex) when (ex is not KeyCodecException)
+            catch (Exception ex) when (ex is not NatsKeyCodecException)
             {
-                throw new KeyCodecException($"Failed to encode key at codec {i}.", ex);
+                throw new NatsKeyCodecException($"Failed to encode key at codec {i}.", ex);
             }
         }
 
@@ -55,9 +55,9 @@ public sealed class KeyChainCodec : IFilterableKeyCodec
             {
                 result = _codecs[i].DecodeKey(result);
             }
-            catch (Exception ex) when (ex is not KeyCodecException)
+            catch (Exception ex) when (ex is not NatsKeyCodecException)
             {
-                throw new KeyCodecException($"Failed to decode key at codec {i}.", ex);
+                throw new NatsKeyCodecException($"Failed to decode key at codec {i}.", ex);
             }
         }
 
@@ -65,15 +65,15 @@ public sealed class KeyChainCodec : IFilterableKeyCodec
     }
 
     /// <inheritdoc/>
-    /// <exception cref="KeyCodecException">Thrown when any codec in the chain does not support filtering.</exception>
+    /// <exception cref="NatsKeyCodecException">Thrown when any codec in the chain does not support filtering.</exception>
     public string EncodeFilter(string filter)
     {
         // First, verify all codecs support filtering
         for (var i = 0; i < _codecs.Length; i++)
         {
-            if (_codecs[i] is not IFilterableKeyCodec)
+            if (_codecs[i] is not INatsFilterableKeyCodec)
             {
-                throw new KeyCodecException($"Codec at index {i} does not support wildcard filtering.");
+                throw new NatsKeyCodecException($"Codec at index {i} does not support wildcard filtering.");
             }
         }
 
@@ -83,11 +83,11 @@ public sealed class KeyChainCodec : IFilterableKeyCodec
         {
             try
             {
-                result = ((IFilterableKeyCodec)_codecs[i]).EncodeFilter(result);
+                result = ((INatsFilterableKeyCodec)_codecs[i]).EncodeFilter(result);
             }
-            catch (Exception ex) when (ex is not KeyCodecException)
+            catch (Exception ex) when (ex is not NatsKeyCodecException)
             {
-                throw new KeyCodecException($"Failed to encode filter at codec {i}.", ex);
+                throw new NatsKeyCodecException($"Failed to encode filter at codec {i}.", ex);
             }
         }
 

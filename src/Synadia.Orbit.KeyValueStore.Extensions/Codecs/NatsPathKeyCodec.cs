@@ -1,7 +1,7 @@
 // Copyright (c) Synadia Communications, Inc. All rights reserved.
 // Licensed under the Apache License, Version 2.0.
 
-namespace Synadia.Orbit.KeyValueStore.Extensions;
+namespace Synadia.Orbit.KeyValueStore.Extensions.Codecs;
 
 /// <summary>
 /// A codec that translates between path-style keys (using '/') and NATS subject notation (using '.').
@@ -10,7 +10,7 @@ namespace Synadia.Orbit.KeyValueStore.Extensions;
 /// This codec is useful when you want to use familiar path-style keys like "/users/123/profile"
 /// which get translated to NATS-compatible keys like "_root_.users.123.profile".
 /// </remarks>
-public sealed class PathKeyCodec : IFilterableKeyCodec
+public sealed class NatsPathKeyCodec : INatsFilterableKeyCodec
 {
     /// <summary>
     /// The prefix used to encode keys that start with a leading slash.
@@ -19,14 +19,14 @@ public sealed class PathKeyCodec : IFilterableKeyCodec
     /// </summary>
     internal const string RootPrefix = "_root_";
 
-    private PathKeyCodec()
+    private NatsPathKeyCodec()
     {
     }
 
     /// <summary>
-    /// Gets the singleton instance of the <see cref="PathKeyCodec"/>.
+    /// Gets the singleton instance of the <see cref="NatsPathKeyCodec"/>.
     /// </summary>
-    public static PathKeyCodec Instance { get; } = new();
+    public static NatsPathKeyCodec Instance { get; } = new();
 
     /// <inheritdoc/>
     public string EncodeKey(string key)

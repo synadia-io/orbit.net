@@ -3,22 +3,22 @@
 
 using System.Text;
 
-namespace Synadia.Orbit.KeyValueStore.Extensions;
+namespace Synadia.Orbit.KeyValueStore.Extensions.Codecs;
 
 /// <summary>
 /// A codec that encodes keys using URL-safe Base64 encoding.
 /// Each token (separated by '.') is encoded separately, preserving the NATS subject structure.
 /// </summary>
-public sealed class Base64KeyCodec : IFilterableKeyCodec
+public sealed class NatsBase64KeyCodec : INatsFilterableKeyCodec
 {
-    private Base64KeyCodec()
+    private NatsBase64KeyCodec()
     {
     }
 
     /// <summary>
-    /// Gets the singleton instance of the <see cref="Base64KeyCodec"/>.
+    /// Gets the singleton instance of the <see cref="NatsBase64KeyCodec"/>.
     /// </summary>
-    public static Base64KeyCodec Instance { get; } = new();
+    public static NatsBase64KeyCodec Instance { get; } = new();
 
     /// <inheritdoc/>
     public string EncodeKey(string key)
