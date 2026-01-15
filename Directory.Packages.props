@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-    <NatsVersion>2.7.1</NatsVersion>
+    <NatsVersion>2.7.2-preview.1</NatsVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="NATS.Net" Version="$(NatsVersion)" />
@@ -10,6 +10,7 @@
     <PackageVersion Include="NATS.Client.JetStream" Version="$(NatsVersion)" />
     <PackageVersion Include="NATS.Client.Serializers.Json" Version="$(NatsVersion)" />
     <PackageVersion Include="NATS.Client.ObjectStore" Version="$(NatsVersion)" />
+    <PackageVersion Include="NATS.Client.KeyValueStore" Version="$(NatsVersion)" />
     <PackageVersion Include="NATS.Extensions.Microsoft.DependencyInjection" Version="$(NatsVersion)" />
 
     <PackageVersion Include="System.Text.Json" Version="8.0.5"/>
