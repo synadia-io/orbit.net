@@ -35,14 +35,13 @@ jobs:
           echo "create=$create" | tee -a "$GITHUB_OUTPUT"
 
       - if: ${{ fromJSON(steps.tag.outputs.create) }}
+        name: Set up Go
+        uses: actions/setup-go@v5
+        with: { cache: true }
+
+      - if: ${{ fromJSON(steps.tag.outputs.create) }}
         name: Install nats-server
-        run: |
-          branch=$(curl https://api.mtmk.dev/gh/v1/releases/tag/nats-io/nats-server/latest)
-          for i in 1 2 3
-          do
-            curl -sf https://binaries.nats.dev/nats-io/nats-server/v2@$branch | PREFIX=. sh && break || sleep 30
-          done
-          sudo mv nats-server /usr/local/bin
+        run: go install github.com/nats-io/nats-server/v2@latest
 
       - if: ${{ fromJSON(steps.tag.outputs.create) }}
         name: Check nats-server
@@ -55,6 +54,7 @@ jobs:
           dotnet-version: |
             8.x
             9.x
+            10.x
 
       - if: ${{ fromJSON(steps.tag.outputs.create) }}
         name: Test
