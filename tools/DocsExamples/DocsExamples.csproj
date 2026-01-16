@@ -10,6 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Synadia.Orbit.JetStream.Extensions\Synadia.Orbit.JetStream.Extensions.csproj" />
     <ProjectReference Include="..\..\src\Synadia.Orbit.JetStream.Publisher\Synadia.Orbit.JetStream.Publisher.csproj" />
+    <ProjectReference Include="..\..\src\Synadia.Orbit.KeyValueStore.Extensions\Synadia.Orbit.KeyValueStore.Extensions.csproj" />
   </ItemGroup>
 
   <ItemGroup>

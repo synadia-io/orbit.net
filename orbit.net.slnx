@@ -16,11 +16,13 @@
     <File Path="src/Directory.Build.props" />
     <Project Path="src/Synadia.Orbit.JetStream.Extensions/Synadia.Orbit.JetStream.Extensions.csproj" />
     <Project Path="src/Synadia.Orbit.JetStream.Publisher/Synadia.Orbit.JetStream.Publisher.csproj" />
+    <Project Path="src/Synadia.Orbit.KeyValueStore.Extensions/Synadia.Orbit.KeyValueStore.Extensions.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <File Path="tests/Directory.Build.props" />
     <Project Path="tests/Synadia.Orbit.JetStream.Extensions.Test/Synadia.Orbit.JetStream.Extensions.Test.csproj" />
     <Project Path="tests/Synadia.Orbit.JetStream.Publisher.Test/Synadia.Orbit.JetStream.Publisher.Test.csproj" />
+    <Project Path="tests/Synadia.Orbit.KeyValueStore.Extensions.Test/Synadia.Orbit.KeyValueStore.Extensions.Test.csproj" />
     <Project Path="tests/Synadia.Orbit.TestUtils/Synadia.Orbit.TestUtils.csproj" />
   </Folder>
   <Folder Name="/tools/">
