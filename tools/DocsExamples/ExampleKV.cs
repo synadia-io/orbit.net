@@ -158,7 +158,7 @@ public class Rot13KeyCodec : INatsFilterableKeyCodec
 
     private static string Rot13(string input)
     {
-        var result = new char[input.Length];
+        char[] result = new char[input.Length];
         for (int i = 0; i < input.Length; i++)
         {
             char c = input[i];
