@@ -17,6 +17,7 @@ jobs:
         config:
           - pkg: 'JetStream.Extensions'
           - pkg: 'JetStream.Publisher'
+          - pkg: 'KeyValueStore.Extensions'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
