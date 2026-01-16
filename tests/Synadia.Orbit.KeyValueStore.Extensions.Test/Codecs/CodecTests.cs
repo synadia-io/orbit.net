@@ -422,4 +422,72 @@ public class CodecTests
         Assert.Equal("updated", entry.Value);
         Assert.Equal(key, entry.Key);
     }
+
+    [Fact]
+    public void Rot13KeyCodec_encodes_and_decodes_correctly()
+    {
+        var codec = new Rot13KeyCodec();
+
+        // ROT13 is its own inverse
+        Assert.Equal("frperg.cnffjbeq", codec.EncodeKey("secret.password"));
+        Assert.Equal("secret.password", codec.DecodeKey("frperg.cnffjbeq"));
+
+        // Verify roundtrip
+        var key = "secret.api-key";
+        var encoded = codec.EncodeKey(key);
+        var decoded = codec.DecodeKey(encoded);
+        Assert.Equal(key, decoded);
+
+        _output.WriteLine($"Original: {key}");
+        _output.WriteLine($"Encoded: {encoded}");
+    }
+
+    [Fact]
+    public void Rot13KeyCodec_preserves_non_letters()
+    {
+        var codec = new Rot13KeyCodec();
+
+        // Dots, dashes, numbers should pass through unchanged
+        Assert.Equal("grfg.123-xrl", codec.EncodeKey("test.123-key"));
+
+        // Wildcards should be preserved in filters
+        Assert.Equal("frperg.*", codec.EncodeFilter("secret.*"));
+        Assert.Equal("frperg.>", codec.EncodeFilter("secret.>"));
+    }
+
+    [Fact]
+    public async Task Rot13KeyCodec_works_with_kv_store()
+    {
+        await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await connection.ConnectAsync();
+
+        var kv = connection.CreateKeyValueStoreContext();
+        string prefix = _server.GetNextId();
+        string bucketName = $"{prefix}_rot13_test";
+
+        CancellationToken ct = TestContext.Current.CancellationToken;
+
+        var rawStore = await kv.CreateStoreAsync(bucketName, ct);
+        var store = rawStore.WithKeyCodec(new Rot13KeyCodec());
+
+        // Store with readable keys
+        await store.PutAsync("secret.password", "hunter2", cancellationToken: ct);
+
+        // Keys are returned decoded
+        var entry = await store.GetEntryAsync<string>("secret.password", cancellationToken: ct);
+        Assert.Equal("secret.password", entry.Key);
+        Assert.Equal("hunter2", entry.Value);
+
+        // Verify raw storage has ROT13 encoded key
+        var rawKeys = new List<string>();
+        await foreach (var key in rawStore.GetKeysAsync(cancellationToken: ct))
+        {
+            rawKeys.Add(key);
+        }
+
+        Assert.Contains("frperg.cnffjbeq", rawKeys);
+
+        _output.WriteLine($"Decoded Key: {entry.Key}");
+        _output.WriteLine($"Raw Key: {rawKeys[0]}");
+    }
 }
