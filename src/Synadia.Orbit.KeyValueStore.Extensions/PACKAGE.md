@@ -96,6 +96,76 @@ public class MyCustomCodec : INatsFilterableKeyCodec
 var store = rawStore.WithKeyCodec(new MyCustomCodec());
 ```
 
+Example: Custom Codec (ROT13 'encryption')
+
+```csharp
+using Synadia.Orbit.KeyValueStore.Extensions.Codecs;
+
+await using var client = new NatsClient();
+var kv = client.CreateKeyValueStoreContext();
+
+var rawStore = await kv.CreateStoreAsync("secret-bucket");
+
+// Use custom ROT13 codec for "encrypted" keys
+var store = rawStore.WithKeyCodec(new Rot13KeyCodec());
+
+// Store with readable keys - they get ROT13 encoded in storage
+await store.PutAsync("secret.password", "hunter2");
+await store.PutAsync("secret.api-key", "abc123");
+
+// Keys are returned decoded
+var entry = await store.GetEntryAsync<string>("secret.password");
+Console.WriteLine($"Key: {entry.Key}, Value: {entry.Value}");
+// Output: Key: secret.password, Value: hunter2
+
+// But in raw storage, keys are ROT13 encoded
+await foreach (string key in rawStore.GetKeysAsync())
+{
+    Console.WriteLine($"Raw Key: {key}");
+}
+// Output:
+// Raw Key: frperg.cnffjbeq
+// Raw Key: frperg.ncv-xrl
+```
+
+```csharp
+/// <summary>
+/// A custom codec that "encrypts" keys using ROT13 substitution cipher.
+/// This is for demonstration purposes only - ROT13 is not secure encryption!
+/// </summary>
+public class Rot13KeyCodec : INatsFilterableKeyCodec
+{
+    public string EncodeKey(string key) => Rot13(key);
+
+    public string DecodeKey(string key) => Rot13(key); // ROT13 is its own inverse
+
+    public string EncodeFilter(string filter) => Rot13(filter);
+
+    private static string Rot13(string input)
+    {
+        var result = new char[input.Length];
+        for (int i = 0; i < input.Length; i++)
+        {
+            char c = input[i];
+            if (c >= 'a' && c <= 'z')
+            {
+                result[i] = (char)('a' + (c - 'a' + 13) % 26);
+            }
+            else if (c >= 'A' && c <= 'Z')
+            {
+                result[i] = (char)('A' + (c - 'A' + 13) % 26);
+            }
+            else
+            {
+                result[i] = c; // Non-letters pass through unchanged (including '.' and '*')
+            }
+        }
+
+        return new string(result);
+    }
+}
+```
+
 ## Available Codecs
 
 | Codec | Description |
