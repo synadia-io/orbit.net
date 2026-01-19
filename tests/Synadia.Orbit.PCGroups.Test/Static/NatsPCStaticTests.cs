@@ -2,10 +2,8 @@
 // Licensed under the Apache License, Version 2.0.
 
 using NATS.Client.Core;
-using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
 using NATS.Net;
-using Synadia.Orbit.PCGroups;
 using Synadia.Orbit.PCGroups.Static;
 using Synadia.Orbit.TestUtils;
 
@@ -21,7 +19,7 @@ public class NatsPCStaticTests
     [Fact]
     public async Task CreateAndGetConfig_Success()
     {
-        await using var nats = new NatsClient(_server.Url);
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
         var js = nats.CreateJetStreamContext();
 
         // Create a stream
@@ -65,7 +63,7 @@ public class NatsPCStaticTests
     [Fact]
     public async Task CreateWithMembers_Success()
     {
-        await using var nats = new NatsClient(_server.Url);
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
         var js = nats.CreateJetStreamContext();
 
         var streamName = $"test-stream-{Guid.NewGuid():N}";
@@ -106,7 +104,7 @@ public class NatsPCStaticTests
     [Fact]
     public async Task CreateWithMemberMappings_Success()
     {
-        await using var nats = new NatsClient(_server.Url);
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
         var js = nats.CreateJetStreamContext();
 
         var streamName = $"test-stream-{Guid.NewGuid():N}";
@@ -150,7 +148,7 @@ public class NatsPCStaticTests
     [Fact]
     public async Task ListConsumerGroups_Success()
     {
-        await using var nats = new NatsClient(_server.Url);
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
         var js = nats.CreateJetStreamContext();
 
         var streamName = $"test-stream-{Guid.NewGuid():N}";
@@ -223,7 +221,7 @@ public class NatsPCStaticTests
     [Fact]
     public async Task Validation_MembersAndMappingsMutuallyExclusive()
     {
-        await using var nats = new NatsClient(_server.Url);
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
         var js = nats.CreateJetStreamContext();
 
         var streamName = $"test-stream-{Guid.NewGuid():N}";
@@ -255,7 +253,7 @@ public class NatsPCStaticTests
     [Fact]
     public async Task Validation_MaxMembersMustBePositive()
     {
-        await using var nats = new NatsClient(_server.Url);
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
         var js = nats.CreateJetStreamContext();
 
         var exception = await Assert.ThrowsAsync<NatsPCConfigurationException>(() =>

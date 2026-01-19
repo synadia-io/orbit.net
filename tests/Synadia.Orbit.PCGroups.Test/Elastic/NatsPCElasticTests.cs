@@ -2,10 +2,8 @@
 // Licensed under the Apache License, Version 2.0.
 
 using NATS.Client.Core;
-using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
 using NATS.Net;
-using Synadia.Orbit.PCGroups;
 using Synadia.Orbit.PCGroups.Elastic;
 using Synadia.Orbit.TestUtils;
 
@@ -21,7 +19,7 @@ public class NatsPCElasticTests
     [Fact]
     public async Task CreateAndGetConfig_Success()
     {
-        await using var nats = new NatsClient(_server.Url);
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
         var js = nats.CreateJetStreamContext();
 
         // Create a stream
@@ -68,7 +66,7 @@ public class NatsPCElasticTests
     [Fact]
     public async Task AddAndRemoveMembers_Success()
     {
-        await using var nats = new NatsClient(_server.Url);
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
         var js = nats.CreateJetStreamContext();
 
         var streamName = $"test-stream-{Guid.NewGuid():N}";
@@ -122,7 +120,7 @@ public class NatsPCElasticTests
     [Fact]
     public async Task SetMemberMappings_Success()
     {
-        await using var nats = new NatsClient(_server.Url);
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
         var js = nats.CreateJetStreamContext();
 
         var streamName = $"test-stream-{Guid.NewGuid():N}";
@@ -175,7 +173,7 @@ public class NatsPCElasticTests
     [Fact]
     public async Task ListConsumerGroups_Success()
     {
-        await using var nats = new NatsClient(_server.Url);
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
         var js = nats.CreateJetStreamContext();
 
         var streamName = $"test-stream-{Guid.NewGuid():N}";
@@ -214,7 +212,7 @@ public class NatsPCElasticTests
     [Fact]
     public async Task GetPartitionFilters_Works()
     {
-        await using var nats = new NatsClient(_server.Url);
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
         var js = nats.CreateJetStreamContext();
 
         var streamName = $"test-stream-{Guid.NewGuid():N}";
@@ -254,7 +252,7 @@ public class NatsPCElasticTests
     [Fact]
     public async Task Validation_FilterRequired()
     {
-        await using var nats = new NatsClient(_server.Url);
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
         var js = nats.CreateJetStreamContext();
 
         var exception = await Assert.ThrowsAsync<NatsPCConfigurationException>(() =>
@@ -272,7 +270,7 @@ public class NatsPCElasticTests
     [Fact]
     public async Task Validation_PartitioningWildcardsRequired()
     {
-        await using var nats = new NatsClient(_server.Url);
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
         var js = nats.CreateJetStreamContext();
 
         var exception = await Assert.ThrowsAsync<NatsPCConfigurationException>(() =>
@@ -290,7 +288,7 @@ public class NatsPCElasticTests
     [Fact]
     public async Task Validation_CannotModifyMembersWhenMappingsDefined()
     {
-        await using var nats = new NatsClient(_server.Url);
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
         var js = nats.CreateJetStreamContext();
 
         var streamName = $"test-stream-{Guid.NewGuid():N}";
