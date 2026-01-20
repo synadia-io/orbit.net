@@ -3,43 +3,41 @@
 
 // ReSharper disable SuggestVarOrType_BuiltInTypes
 using System.CommandLine;
-using System.CommandLine.Builder;
-using System.CommandLine.Parsing;
 using NATS.Client.Core;
-using NATS.Client.JetStream;
+using NATS.Net;
 using Synadia.Orbit.PCGroups;
 using Synadia.Orbit.PCGroups.Elastic;
 using Synadia.Orbit.PCGroups.Static;
 
-var serverOption = new Option<string>(
-    aliases: ["--server", "-s"],
-    getDefaultValue: () => "nats://localhost:4222",
-    description: "NATS server URL");
-
-var rootCommand = new RootCommand("OrbitPcg - NATS Partitioned Consumer Groups CLI")
+var serverOption = new Option<string>("--server", "-s")
 {
-    serverOption,
+    Description = "NATS server URL",
+    DefaultValueFactory = _ => "nats://localhost:4222",
 };
+
+var rootCommand = new RootCommand("OrbitPcg - NATS Partitioned Consumer Groups CLI") { serverOption };
 
 // ============================================================================
 // STATIC COMMANDS
 // ============================================================================
 var staticCommand = new Command("static", "Manage static consumer groups");
-rootCommand.AddCommand(staticCommand);
+rootCommand.Add(staticCommand);
 
 // static list
-var staticListCommand = new Command("list", "List all static consumer groups on a stream");
-staticListCommand.AddAlias("ls");
-var staticListStreamArg = new Argument<string>("stream", "Stream name");
-staticListCommand.AddArgument(staticListStreamArg);
-staticListCommand.SetHandler(async (server, stream) =>
+var staticListStreamArg = new Argument<string>("stream") { Description = "Stream name" };
+var staticListCommand = new Command("list", "List all static consumer groups on a stream") { staticListStreamArg };
+staticListCommand.Aliases.Add("ls");
+staticListCommand.SetAction(async (parseResult, ct) =>
 {
+    var server = parseResult.GetValue(serverOption)!;
+    var stream = parseResult.GetValue(staticListStreamArg)!;
+
     await using var nats = new NatsConnection(new NatsOpts { Url = server });
-    var js = new NatsJSContext(nats);
+    var js = nats.CreateJetStreamContext();
 
     Console.WriteLine($"Static consumer groups on stream '{stream}':");
     var count = 0;
-    await foreach (var group in js.ListPcgStaticAsync(stream))
+    await foreach (var group in js.ListPcgStaticAsync(stream, ct))
     {
         Console.WriteLine($"  - {group}");
         count++;
@@ -49,21 +47,23 @@ staticListCommand.SetHandler(async (server, stream) =>
     {
         Console.WriteLine("  (none)");
     }
-}, serverOption, staticListStreamArg);
-staticCommand.AddCommand(staticListCommand);
+});
+staticCommand.Add(staticListCommand);
 
 // static info
-var staticInfoCommand = new Command("info", "Get static consumer group configuration and active members");
-var staticInfoStreamArg = new Argument<string>("stream", "Stream name");
-var staticInfoNameArg = new Argument<string>("name", "Consumer group name");
-staticInfoCommand.AddArgument(staticInfoStreamArg);
-staticInfoCommand.AddArgument(staticInfoNameArg);
-staticInfoCommand.SetHandler(async (server, stream, name) =>
+var staticInfoStreamArg = new Argument<string>("stream") { Description = "Stream name" };
+var staticInfoNameArg = new Argument<string>("name") { Description = "Consumer group name" };
+var staticInfoCommand = new Command("info", "Get static consumer group configuration and active members") { staticInfoStreamArg, staticInfoNameArg };
+staticInfoCommand.SetAction(async (parseResult, ct) =>
 {
-    await using var nats = new NatsConnection(new NatsOpts { Url = server });
-    var js = new NatsJSContext(nats);
+    var server = parseResult.GetValue(serverOption)!;
+    var stream = parseResult.GetValue(staticInfoStreamArg)!;
+    var name = parseResult.GetValue(staticInfoNameArg)!;
 
-    var config = await js.GetPcgStaticConfigAsync(stream, name);
+    await using var nats = new NatsConnection(new NatsOpts { Url = server });
+    var js = nats.CreateJetStreamContext();
+
+    var config = await js.GetPcgStaticConfigAsync(stream, name, ct);
     Console.WriteLine($"Static Consumer Group: {name}");
     Console.WriteLine($"  Stream:      {stream}");
     Console.WriteLine($"  MaxMembers:  {config.MaxMembers}");
@@ -85,7 +85,7 @@ staticInfoCommand.SetHandler(async (server, stream, name) =>
 
     Console.WriteLine("\nActive Members:");
     var activeCount = 0;
-    await foreach (var member in js.ListPcgStaticActiveMembersAsync(stream, name))
+    await foreach (var member in js.ListPcgStaticActiveMembersAsync(stream, name, ct))
     {
         Console.WriteLine($"  - {member}");
         activeCount++;
@@ -95,27 +95,33 @@ staticInfoCommand.SetHandler(async (server, stream, name) =>
     {
         Console.WriteLine("  (none)");
     }
-}, serverOption, staticInfoStreamArg, staticInfoNameArg);
-staticCommand.AddCommand(staticInfoCommand);
+});
+staticCommand.Add(staticInfoCommand);
 
 // static create
-var staticCreateCommand = new Command("create", "Create a static consumer group");
-var staticCreateStreamArg = new Argument<string>("stream", "Stream name");
-var staticCreateNameArg = new Argument<string>("name", "Consumer group name");
-var staticCreateMaxMembersArg = new Argument<uint>("max-members", "Maximum number of members (partitions)");
-var staticCreateFilterOption = new Option<string?>("--filter", "Filter subject pattern");
-var staticCreateMembersOption = new Option<string[]?>("--members", "Member names (space-separated)") { AllowMultipleArgumentsPerToken = true };
-var staticCreateMappingsOption = new Option<string[]?>("--mappings", "Member mappings in format member:p1,p2,p3") { AllowMultipleArgumentsPerToken = true };
-staticCreateCommand.AddArgument(staticCreateStreamArg);
-staticCreateCommand.AddArgument(staticCreateNameArg);
-staticCreateCommand.AddArgument(staticCreateMaxMembersArg);
-staticCreateCommand.AddOption(staticCreateFilterOption);
-staticCreateCommand.AddOption(staticCreateMembersOption);
-staticCreateCommand.AddOption(staticCreateMappingsOption);
-staticCreateCommand.SetHandler(async (server, stream, name, maxMembers, filter, members, mappingsStr) =>
+var staticCreateStreamArg = new Argument<string>("stream") { Description = "Stream name" };
+var staticCreateNameArg = new Argument<string>("name") { Description = "Consumer group name" };
+var staticCreateMaxMembersArg = new Argument<uint>("max-members") { Description = "Maximum number of members (partitions)" };
+var staticCreateFilterOption = new Option<string?>("--filter") { Description = "Filter subject pattern" };
+var staticCreateMembersOption = new Option<string[]?>("--members") { Description = "Member names (space-separated)", AllowMultipleArgumentsPerToken = true };
+var staticCreateMappingsOption = new Option<string[]?>("--mappings") { Description = "Member mappings in format member:p1,p2,p3", AllowMultipleArgumentsPerToken = true };
+var staticCreateCommand = new Command("create", "Create a static consumer group")
 {
+    staticCreateStreamArg, staticCreateNameArg, staticCreateMaxMembersArg,
+    staticCreateFilterOption, staticCreateMembersOption, staticCreateMappingsOption,
+};
+staticCreateCommand.SetAction(async (parseResult, ct) =>
+{
+    var server = parseResult.GetValue(serverOption)!;
+    var stream = parseResult.GetValue(staticCreateStreamArg)!;
+    var name = parseResult.GetValue(staticCreateNameArg)!;
+    var maxMembers = parseResult.GetValue(staticCreateMaxMembersArg);
+    var filter = parseResult.GetValue(staticCreateFilterOption);
+    var members = parseResult.GetValue(staticCreateMembersOption);
+    var mappingsStr = parseResult.GetValue(staticCreateMappingsOption);
+
     await using var nats = new NatsConnection(new NatsOpts { Url = server });
-    var js = new NatsJSContext(nats);
+    var js = nats.CreateJetStreamContext();
 
     NatsPcgMemberMapping[]? mappings = null;
     if (mappingsStr is { Length: > 0 })
@@ -124,29 +130,28 @@ staticCreateCommand.SetHandler(async (server, stream, name, maxMembers, filter, 
     }
 
     var config = await js.CreatePcgStaticAsync(stream, name, maxMembers,
-        filter: filter,
-        members: members,
-        memberMappings: mappings);
+        filter: filter, members: members, memberMappings: mappings, cancellationToken: ct);
 
     Console.WriteLine($"Created static consumer group '{name}' on stream '{stream}'");
     Console.WriteLine($"  MaxMembers: {config.MaxMembers}");
     if (config.Filter != null)
         Console.WriteLine($"  Filter: {config.Filter}");
-}, serverOption, staticCreateStreamArg, staticCreateNameArg, staticCreateMaxMembersArg,
-   staticCreateFilterOption, staticCreateMembersOption, staticCreateMappingsOption);
-staticCommand.AddCommand(staticCreateCommand);
+});
+staticCommand.Add(staticCreateCommand);
 
 // static delete
-var staticDeleteCommand = new Command("delete", "Delete a static consumer group");
-staticDeleteCommand.AddAlias("rm");
-var staticDeleteStreamArg = new Argument<string>("stream", "Stream name");
-var staticDeleteNameArg = new Argument<string>("name", "Consumer group name");
-var staticDeleteForceOption = new Option<bool>(["--force", "-f"], "Skip confirmation");
-staticDeleteCommand.AddArgument(staticDeleteStreamArg);
-staticDeleteCommand.AddArgument(staticDeleteNameArg);
-staticDeleteCommand.AddOption(staticDeleteForceOption);
-staticDeleteCommand.SetHandler(async (server, stream, name, force) =>
+var staticDeleteStreamArg = new Argument<string>("stream") { Description = "Stream name" };
+var staticDeleteNameArg = new Argument<string>("name") { Description = "Consumer group name" };
+var staticDeleteForceOption = new Option<bool>("--force", "-f") { Description = "Skip confirmation" };
+var staticDeleteCommand = new Command("delete", "Delete a static consumer group") { staticDeleteStreamArg, staticDeleteNameArg, staticDeleteForceOption };
+staticDeleteCommand.Aliases.Add("rm");
+staticDeleteCommand.SetAction(async (parseResult, ct) =>
 {
+    var server = parseResult.GetValue(serverOption)!;
+    var stream = parseResult.GetValue(staticDeleteStreamArg)!;
+    var name = parseResult.GetValue(staticDeleteNameArg)!;
+    var force = parseResult.GetValue(staticDeleteForceOption);
+
     if (!force)
     {
         Console.Write($"Delete static consumer group '{name}' on stream '{stream}'? [y/N] ");
@@ -159,51 +164,55 @@ staticDeleteCommand.SetHandler(async (server, stream, name, force) =>
     }
 
     await using var nats = new NatsConnection(new NatsOpts { Url = server });
-    var js = new NatsJSContext(nats);
+    var js = nats.CreateJetStreamContext();
 
-    await js.DeletePcgStaticAsync(stream, name);
+    await js.DeletePcgStaticAsync(stream, name, ct);
     Console.WriteLine($"Deleted static consumer group '{name}'");
-}, serverOption, staticDeleteStreamArg, staticDeleteNameArg, staticDeleteForceOption);
-staticCommand.AddCommand(staticDeleteCommand);
+});
+staticCommand.Add(staticDeleteCommand);
 
 // static step-down
-var staticStepDownCommand = new Command("step-down", "Force a member to step down");
-staticStepDownCommand.AddAlias("sd");
-var staticStepDownStreamArg = new Argument<string>("stream", "Stream name");
-var staticStepDownNameArg = new Argument<string>("name", "Consumer group name");
-var staticStepDownMemberArg = new Argument<string>("member", "Member name");
-staticStepDownCommand.AddArgument(staticStepDownStreamArg);
-staticStepDownCommand.AddArgument(staticStepDownNameArg);
-staticStepDownCommand.AddArgument(staticStepDownMemberArg);
-staticStepDownCommand.SetHandler(async (server, stream, name, member) =>
+var staticStepDownStreamArg = new Argument<string>("stream") { Description = "Stream name" };
+var staticStepDownNameArg = new Argument<string>("name") { Description = "Consumer group name" };
+var staticStepDownMemberArg = new Argument<string>("member") { Description = "Member name" };
+var staticStepDownCommand = new Command("step-down", "Force a member to step down") { staticStepDownStreamArg, staticStepDownNameArg, staticStepDownMemberArg };
+staticStepDownCommand.Aliases.Add("sd");
+staticStepDownCommand.SetAction(async (parseResult, ct) =>
 {
-    await using var nats = new NatsConnection(new NatsOpts { Url = server });
-    var js = new NatsJSContext(nats);
+    var server = parseResult.GetValue(serverOption)!;
+    var stream = parseResult.GetValue(staticStepDownStreamArg)!;
+    var name = parseResult.GetValue(staticStepDownNameArg)!;
+    var member = parseResult.GetValue(staticStepDownMemberArg)!;
 
-    await js.PcgStaticMemberStepDownAsync(stream, name, member);
+    await using var nats = new NatsConnection(new NatsOpts { Url = server });
+    var js = nats.CreateJetStreamContext();
+
+    await js.PcgStaticMemberStepDownAsync(stream, name, member, ct);
     Console.WriteLine($"Member '{member}' stepped down from group '{name}'");
-}, serverOption, staticStepDownStreamArg, staticStepDownNameArg, staticStepDownMemberArg);
-staticCommand.AddCommand(staticStepDownCommand);
+});
+staticCommand.Add(staticStepDownCommand);
 
 // ============================================================================
 // ELASTIC COMMANDS
 // ============================================================================
 var elasticCommand = new Command("elastic", "Manage elastic consumer groups");
-rootCommand.AddCommand(elasticCommand);
+rootCommand.Add(elasticCommand);
 
 // elastic list
-var elasticListCommand = new Command("list", "List all elastic consumer groups on a stream");
-elasticListCommand.AddAlias("ls");
-var elasticListStreamArg = new Argument<string>("stream", "Stream name");
-elasticListCommand.AddArgument(elasticListStreamArg);
-elasticListCommand.SetHandler(async (server, stream) =>
+var elasticListStreamArg = new Argument<string>("stream") { Description = "Stream name" };
+var elasticListCommand = new Command("list", "List all elastic consumer groups on a stream") { elasticListStreamArg };
+elasticListCommand.Aliases.Add("ls");
+elasticListCommand.SetAction(async (parseResult, ct) =>
 {
+    var server = parseResult.GetValue(serverOption)!;
+    var stream = parseResult.GetValue(elasticListStreamArg)!;
+
     await using var nats = new NatsConnection(new NatsOpts { Url = server });
-    var js = new NatsJSContext(nats);
+    var js = nats.CreateJetStreamContext();
 
     Console.WriteLine($"Elastic consumer groups on stream '{stream}':");
     var count = 0;
-    await foreach (var group in js.ListPcgElasticAsync(stream))
+    await foreach (var group in js.ListPcgElasticAsync(stream, ct))
     {
         Console.WriteLine($"  - {group}");
         count++;
@@ -213,21 +222,23 @@ elasticListCommand.SetHandler(async (server, stream) =>
     {
         Console.WriteLine("  (none)");
     }
-}, serverOption, elasticListStreamArg);
-elasticCommand.AddCommand(elasticListCommand);
+});
+elasticCommand.Add(elasticListCommand);
 
 // elastic info
-var elasticInfoCommand = new Command("info", "Get elastic consumer group configuration and active members");
-var elasticInfoStreamArg = new Argument<string>("stream", "Stream name");
-var elasticInfoNameArg = new Argument<string>("name", "Consumer group name");
-elasticInfoCommand.AddArgument(elasticInfoStreamArg);
-elasticInfoCommand.AddArgument(elasticInfoNameArg);
-elasticInfoCommand.SetHandler(async (server, stream, name) =>
+var elasticInfoStreamArg = new Argument<string>("stream") { Description = "Stream name" };
+var elasticInfoNameArg = new Argument<string>("name") { Description = "Consumer group name" };
+var elasticInfoCommand = new Command("info", "Get elastic consumer group configuration and active members") { elasticInfoStreamArg, elasticInfoNameArg };
+elasticInfoCommand.SetAction(async (parseResult, ct) =>
 {
-    await using var nats = new NatsConnection(new NatsOpts { Url = server });
-    var js = new NatsJSContext(nats);
+    var server = parseResult.GetValue(serverOption)!;
+    var stream = parseResult.GetValue(elasticInfoStreamArg)!;
+    var name = parseResult.GetValue(elasticInfoNameArg)!;
 
-    var config = await js.GetPcgElasticConfigAsync(stream, name);
+    await using var nats = new NatsConnection(new NatsOpts { Url = server });
+    var js = nats.CreateJetStreamContext();
+
+    var config = await js.GetPcgElasticConfigAsync(stream, name, ct);
     Console.WriteLine($"Elastic Consumer Group: {name}");
     Console.WriteLine($"  Stream:                {stream}");
     Console.WriteLine($"  MaxMembers:            {config.MaxMembers}");
@@ -255,7 +266,7 @@ elasticInfoCommand.SetHandler(async (server, stream, name) =>
 
     Console.WriteLine("\nActive Members:");
     var activeCount = 0;
-    await foreach (var member in js.ListPcgElasticActiveMembersAsync(stream, name))
+    await foreach (var member in js.ListPcgElasticActiveMembersAsync(stream, name, ct))
     {
         Console.WriteLine($"  - {member}");
         activeCount++;
@@ -265,61 +276,59 @@ elasticInfoCommand.SetHandler(async (server, stream, name) =>
     {
         Console.WriteLine("  (none)");
     }
-}, serverOption, elasticInfoStreamArg, elasticInfoNameArg);
-elasticCommand.AddCommand(elasticInfoCommand);
+});
+elasticCommand.Add(elasticInfoCommand);
 
 // elastic create
-var elasticCreateCommand = new Command("create", "Create an elastic consumer group");
-var elasticCreateStreamArg = new Argument<string>("stream", "Stream name");
-var elasticCreateNameArg = new Argument<string>("name", "Consumer group name");
-var elasticCreateMaxMembersArg = new Argument<uint>("max-members", "Maximum number of members (partitions)");
-var elasticCreateFilterArg = new Argument<string>("filter", "Filter subject pattern");
-var elasticCreateWildcardsArg = new Argument<int[]>("wildcards", "Partitioning wildcard indexes (1-based)");
-var elasticCreateMaxMsgsOption = new Option<long?>("--max-buffered-msgs", "Max buffered messages");
-var elasticCreateMaxBytesOption = new Option<long?>("--max-buffered-bytes", "Max buffered bytes");
-elasticCreateCommand.AddArgument(elasticCreateStreamArg);
-elasticCreateCommand.AddArgument(elasticCreateNameArg);
-elasticCreateCommand.AddArgument(elasticCreateMaxMembersArg);
-elasticCreateCommand.AddArgument(elasticCreateFilterArg);
-elasticCreateCommand.AddArgument(elasticCreateWildcardsArg);
-elasticCreateCommand.AddOption(elasticCreateMaxMsgsOption);
-elasticCreateCommand.AddOption(elasticCreateMaxBytesOption);
-elasticCreateCommand.SetHandler(async context =>
+var elasticCreateStreamArg = new Argument<string>("stream") { Description = "Stream name" };
+var elasticCreateNameArg = new Argument<string>("name") { Description = "Consumer group name" };
+var elasticCreateMaxMembersArg = new Argument<uint>("max-members") { Description = "Maximum number of members (partitions)" };
+var elasticCreateFilterArg = new Argument<string>("filter") { Description = "Filter subject pattern" };
+var elasticCreateWildcardsArg = new Argument<int[]>("wildcards") { Description = "Partitioning wildcard indexes (1-based)" };
+var elasticCreateMaxMsgsOption = new Option<long?>("--max-buffered-msgs") { Description = "Max buffered messages" };
+var elasticCreateMaxBytesOption = new Option<long?>("--max-buffered-bytes") { Description = "Max buffered bytes" };
+var elasticCreateCommand = new Command("create", "Create an elastic consumer group")
 {
-    var server = context.ParseResult.GetValueForOption(serverOption)!;
-    var stream = context.ParseResult.GetValueForArgument(elasticCreateStreamArg);
-    var name = context.ParseResult.GetValueForArgument(elasticCreateNameArg);
-    var maxMembers = context.ParseResult.GetValueForArgument(elasticCreateMaxMembersArg);
-    var filter = context.ParseResult.GetValueForArgument(elasticCreateFilterArg);
-    var wildcards = context.ParseResult.GetValueForArgument(elasticCreateWildcardsArg);
-    var maxMsgs = context.ParseResult.GetValueForOption(elasticCreateMaxMsgsOption);
-    var maxBytes = context.ParseResult.GetValueForOption(elasticCreateMaxBytesOption);
+    elasticCreateStreamArg, elasticCreateNameArg, elasticCreateMaxMembersArg,
+    elasticCreateFilterArg, elasticCreateWildcardsArg, elasticCreateMaxMsgsOption, elasticCreateMaxBytesOption,
+};
+elasticCreateCommand.SetAction(async (parseResult, ct) =>
+{
+    var server = parseResult.GetValue(serverOption)!;
+    var stream = parseResult.GetValue(elasticCreateStreamArg)!;
+    var name = parseResult.GetValue(elasticCreateNameArg)!;
+    var maxMembers = parseResult.GetValue(elasticCreateMaxMembersArg);
+    var filter = parseResult.GetValue(elasticCreateFilterArg)!;
+    var wildcards = parseResult.GetValue(elasticCreateWildcardsArg)!;
+    var maxMsgs = parseResult.GetValue(elasticCreateMaxMsgsOption);
+    var maxBytes = parseResult.GetValue(elasticCreateMaxBytesOption);
 
     await using var nats = new NatsConnection(new NatsOpts { Url = server });
-    var js = new NatsJSContext(nats);
+    var js = nats.CreateJetStreamContext();
 
     var config = await js.CreatePcgElasticAsync(stream, name, maxMembers, filter, wildcards,
-        maxBufferedMessages: maxMsgs,
-        maxBufferedBytes: maxBytes);
+        maxBufferedMessages: maxMsgs, maxBufferedBytes: maxBytes, cancellationToken: ct);
 
     Console.WriteLine($"Created elastic consumer group '{name}' on stream '{stream}'");
     Console.WriteLine($"  MaxMembers:            {config.MaxMembers}");
     Console.WriteLine($"  Filter:                {config.Filter}");
     Console.WriteLine($"  PartitioningWildcards: [{string.Join(", ", config.PartitioningWildcards)}]");
 });
-elasticCommand.AddCommand(elasticCreateCommand);
+elasticCommand.Add(elasticCreateCommand);
 
 // elastic delete
-var elasticDeleteCommand = new Command("delete", "Delete an elastic consumer group");
-elasticDeleteCommand.AddAlias("rm");
-var elasticDeleteStreamArg = new Argument<string>("stream", "Stream name");
-var elasticDeleteNameArg = new Argument<string>("name", "Consumer group name");
-var elasticDeleteForceOption = new Option<bool>(["--force", "-f"], "Skip confirmation");
-elasticDeleteCommand.AddArgument(elasticDeleteStreamArg);
-elasticDeleteCommand.AddArgument(elasticDeleteNameArg);
-elasticDeleteCommand.AddOption(elasticDeleteForceOption);
-elasticDeleteCommand.SetHandler(async (server, stream, name, force) =>
+var elasticDeleteStreamArg = new Argument<string>("stream") { Description = "Stream name" };
+var elasticDeleteNameArg = new Argument<string>("name") { Description = "Consumer group name" };
+var elasticDeleteForceOption = new Option<bool>("--force", "-f") { Description = "Skip confirmation" };
+var elasticDeleteCommand = new Command("delete", "Delete an elastic consumer group") { elasticDeleteStreamArg, elasticDeleteNameArg, elasticDeleteForceOption };
+elasticDeleteCommand.Aliases.Add("rm");
+elasticDeleteCommand.SetAction(async (parseResult, ct) =>
 {
+    var server = parseResult.GetValue(serverOption)!;
+    var stream = parseResult.GetValue(elasticDeleteStreamArg)!;
+    var name = parseResult.GetValue(elasticDeleteNameArg)!;
+    var force = parseResult.GetValue(elasticDeleteForceOption);
+
     if (!force)
     {
         Console.Write($"Delete elastic consumer group '{name}' on stream '{stream}'? [y/N] ");
@@ -332,139 +341,147 @@ elasticDeleteCommand.SetHandler(async (server, stream, name, force) =>
     }
 
     await using var nats = new NatsConnection(new NatsOpts { Url = server });
-    var js = new NatsJSContext(nats);
+    var js = nats.CreateJetStreamContext();
 
-    await js.DeletePcgElasticAsync(stream, name);
+    await js.DeletePcgElasticAsync(stream, name, ct);
     Console.WriteLine($"Deleted elastic consumer group '{name}'");
-}, serverOption, elasticDeleteStreamArg, elasticDeleteNameArg, elasticDeleteForceOption);
-elasticCommand.AddCommand(elasticDeleteCommand);
+});
+elasticCommand.Add(elasticDeleteCommand);
 
 // elastic add
-var elasticAddCommand = new Command("add", "Add members to an elastic consumer group");
-var elasticAddStreamArg = new Argument<string>("stream", "Stream name");
-var elasticAddNameArg = new Argument<string>("name", "Consumer group name");
-var elasticAddMembersArg = new Argument<string[]>("members", "Member names to add");
-elasticAddCommand.AddArgument(elasticAddStreamArg);
-elasticAddCommand.AddArgument(elasticAddNameArg);
-elasticAddCommand.AddArgument(elasticAddMembersArg);
-elasticAddCommand.SetHandler(async (server, stream, name, members) =>
+var elasticAddStreamArg = new Argument<string>("stream") { Description = "Stream name" };
+var elasticAddNameArg = new Argument<string>("name") { Description = "Consumer group name" };
+var elasticAddMembersArg = new Argument<string[]>("members") { Description = "Member names to add" };
+var elasticAddCommand = new Command("add", "Add members to an elastic consumer group") { elasticAddStreamArg, elasticAddNameArg, elasticAddMembersArg };
+elasticAddCommand.SetAction(async (parseResult, ct) =>
 {
-    await using var nats = new NatsConnection(new NatsOpts { Url = server });
-    var js = new NatsJSContext(nats);
+    var server = parseResult.GetValue(serverOption)!;
+    var stream = parseResult.GetValue(elasticAddStreamArg)!;
+    var name = parseResult.GetValue(elasticAddNameArg)!;
+    var members = parseResult.GetValue(elasticAddMembersArg)!;
 
-    var updatedMembers = await js.AddPcgElasticMembersAsync(stream, name, members);
+    await using var nats = new NatsConnection(new NatsOpts { Url = server });
+    var js = nats.CreateJetStreamContext();
+
+    var updatedMembers = await js.AddPcgElasticMembersAsync(stream, name, members, ct);
     Console.WriteLine($"Added members to '{name}'");
     Console.WriteLine($"Current members: {string.Join(", ", updatedMembers)}");
-}, serverOption, elasticAddStreamArg, elasticAddNameArg, elasticAddMembersArg);
-elasticCommand.AddCommand(elasticAddCommand);
+});
+elasticCommand.Add(elasticAddCommand);
 
 // elastic drop
-var elasticDropCommand = new Command("drop", "Remove members from an elastic consumer group");
-var elasticDropStreamArg = new Argument<string>("stream", "Stream name");
-var elasticDropNameArg = new Argument<string>("name", "Consumer group name");
-var elasticDropMembersArg = new Argument<string[]>("members", "Member names to remove");
-elasticDropCommand.AddArgument(elasticDropStreamArg);
-elasticDropCommand.AddArgument(elasticDropNameArg);
-elasticDropCommand.AddArgument(elasticDropMembersArg);
-elasticDropCommand.SetHandler(async (server, stream, name, members) =>
+var elasticDropStreamArg = new Argument<string>("stream") { Description = "Stream name" };
+var elasticDropNameArg = new Argument<string>("name") { Description = "Consumer group name" };
+var elasticDropMembersArg = new Argument<string[]>("members") { Description = "Member names to remove" };
+var elasticDropCommand = new Command("drop", "Remove members from an elastic consumer group") { elasticDropStreamArg, elasticDropNameArg, elasticDropMembersArg };
+elasticDropCommand.SetAction(async (parseResult, ct) =>
 {
-    await using var nats = new NatsConnection(new NatsOpts { Url = server });
-    var js = new NatsJSContext(nats);
+    var server = parseResult.GetValue(serverOption)!;
+    var stream = parseResult.GetValue(elasticDropStreamArg)!;
+    var name = parseResult.GetValue(elasticDropNameArg)!;
+    var members = parseResult.GetValue(elasticDropMembersArg)!;
 
-    var updatedMembers = await js.DeletePcgElasticMembersAsync(stream, name, members);
+    await using var nats = new NatsConnection(new NatsOpts { Url = server });
+    var js = nats.CreateJetStreamContext();
+
+    var updatedMembers = await js.DeletePcgElasticMembersAsync(stream, name, members, ct);
     Console.WriteLine($"Removed members from '{name}'");
     Console.WriteLine($"Current members: {(updatedMembers.Length > 0 ? string.Join(", ", updatedMembers) : "(none)")}");
-}, serverOption, elasticDropStreamArg, elasticDropNameArg, elasticDropMembersArg);
-elasticCommand.AddCommand(elasticDropCommand);
+});
+elasticCommand.Add(elasticDropCommand);
 
 // elastic set-mappings
-var elasticSetMappingsCommand = new Command("set-mappings", "Set member mappings for an elastic consumer group");
-elasticSetMappingsCommand.AddAlias("sm");
-var elasticSetMappingsStreamArg = new Argument<string>("stream", "Stream name");
-var elasticSetMappingsNameArg = new Argument<string>("name", "Consumer group name");
-var elasticSetMappingsMappingsArg = new Argument<string[]>("mappings", "Member mappings in format member:p1,p2,p3");
-elasticSetMappingsCommand.AddArgument(elasticSetMappingsStreamArg);
-elasticSetMappingsCommand.AddArgument(elasticSetMappingsNameArg);
-elasticSetMappingsCommand.AddArgument(elasticSetMappingsMappingsArg);
-elasticSetMappingsCommand.SetHandler(async (server, stream, name, mappingsStr) =>
+var elasticSetMappingsStreamArg = new Argument<string>("stream") { Description = "Stream name" };
+var elasticSetMappingsNameArg = new Argument<string>("name") { Description = "Consumer group name" };
+var elasticSetMappingsMappingsArg = new Argument<string[]>("mappings") { Description = "Member mappings in format member:p1,p2,p3" };
+var elasticSetMappingsCommand = new Command("set-mappings", "Set member mappings for an elastic consumer group") { elasticSetMappingsStreamArg, elasticSetMappingsNameArg, elasticSetMappingsMappingsArg };
+elasticSetMappingsCommand.Aliases.Add("sm");
+elasticSetMappingsCommand.SetAction(async (parseResult, ct) =>
 {
+    var server = parseResult.GetValue(serverOption)!;
+    var stream = parseResult.GetValue(elasticSetMappingsStreamArg)!;
+    var name = parseResult.GetValue(elasticSetMappingsNameArg)!;
+    var mappingsStr = parseResult.GetValue(elasticSetMappingsMappingsArg)!;
+
     await using var nats = new NatsConnection(new NatsOpts { Url = server });
-    var js = new NatsJSContext(nats);
+    var js = nats.CreateJetStreamContext();
 
     var mappings = ParseMappings(mappingsStr);
-    await js.SetPcgElasticMemberMappingsAsync(stream, name, mappings);
+    await js.SetPcgElasticMemberMappingsAsync(stream, name, mappings, ct);
 
     Console.WriteLine($"Set mappings for '{name}':");
     foreach (var mapping in mappings)
     {
         Console.WriteLine($"  {mapping.Member}: [{string.Join(", ", mapping.Partitions)}]");
     }
-}, serverOption, elasticSetMappingsStreamArg, elasticSetMappingsNameArg, elasticSetMappingsMappingsArg);
-elasticCommand.AddCommand(elasticSetMappingsCommand);
+});
+elasticCommand.Add(elasticSetMappingsCommand);
 
 // elastic delete-mappings
-var elasticDeleteMappingsCommand = new Command("delete-mappings", "Delete member mappings for an elastic consumer group");
-elasticDeleteMappingsCommand.AddAlias("dm");
-var elasticDeleteMappingsStreamArg = new Argument<string>("stream", "Stream name");
-var elasticDeleteMappingsNameArg = new Argument<string>("name", "Consumer group name");
-elasticDeleteMappingsCommand.AddArgument(elasticDeleteMappingsStreamArg);
-elasticDeleteMappingsCommand.AddArgument(elasticDeleteMappingsNameArg);
-elasticDeleteMappingsCommand.SetHandler(async (server, stream, name) =>
+var elasticDeleteMappingsStreamArg = new Argument<string>("stream") { Description = "Stream name" };
+var elasticDeleteMappingsNameArg = new Argument<string>("name") { Description = "Consumer group name" };
+var elasticDeleteMappingsCommand = new Command("delete-mappings", "Delete member mappings for an elastic consumer group") { elasticDeleteMappingsStreamArg, elasticDeleteMappingsNameArg };
+elasticDeleteMappingsCommand.Aliases.Add("dm");
+elasticDeleteMappingsCommand.SetAction(async (parseResult, ct) =>
 {
-    await using var nats = new NatsConnection(new NatsOpts { Url = server });
-    var js = new NatsJSContext(nats);
+    var server = parseResult.GetValue(serverOption)!;
+    var stream = parseResult.GetValue(elasticDeleteMappingsStreamArg)!;
+    var name = parseResult.GetValue(elasticDeleteMappingsNameArg)!;
 
-    await js.DeletePcgElasticMemberMappingsAsync(stream, name);
+    await using var nats = new NatsConnection(new NatsOpts { Url = server });
+    var js = nats.CreateJetStreamContext();
+
+    await js.DeletePcgElasticMemberMappingsAsync(stream, name, ct);
     Console.WriteLine($"Deleted mappings for '{name}'");
-}, serverOption, elasticDeleteMappingsStreamArg, elasticDeleteMappingsNameArg);
-elasticCommand.AddCommand(elasticDeleteMappingsCommand);
+});
+elasticCommand.Add(elasticDeleteMappingsCommand);
 
 // elastic step-down
-var elasticStepDownCommand = new Command("step-down", "Force a member to step down");
-elasticStepDownCommand.AddAlias("sd");
-var elasticStepDownStreamArg = new Argument<string>("stream", "Stream name");
-var elasticStepDownNameArg = new Argument<string>("name", "Consumer group name");
-var elasticStepDownMemberArg = new Argument<string>("member", "Member name");
-elasticStepDownCommand.AddArgument(elasticStepDownStreamArg);
-elasticStepDownCommand.AddArgument(elasticStepDownNameArg);
-elasticStepDownCommand.AddArgument(elasticStepDownMemberArg);
-elasticStepDownCommand.SetHandler(async (server, stream, name, member) =>
+var elasticStepDownStreamArg = new Argument<string>("stream") { Description = "Stream name" };
+var elasticStepDownNameArg = new Argument<string>("name") { Description = "Consumer group name" };
+var elasticStepDownMemberArg = new Argument<string>("member") { Description = "Member name" };
+var elasticStepDownCommand = new Command("step-down", "Force a member to step down") { elasticStepDownStreamArg, elasticStepDownNameArg, elasticStepDownMemberArg };
+elasticStepDownCommand.Aliases.Add("sd");
+elasticStepDownCommand.SetAction(async (parseResult, ct) =>
 {
-    await using var nats = new NatsConnection(new NatsOpts { Url = server });
-    var js = new NatsJSContext(nats);
+    var server = parseResult.GetValue(serverOption)!;
+    var stream = parseResult.GetValue(elasticStepDownStreamArg)!;
+    var name = parseResult.GetValue(elasticStepDownNameArg)!;
+    var member = parseResult.GetValue(elasticStepDownMemberArg)!;
 
-    await js.PcgElasticMemberStepDownAsync(stream, name, member);
+    await using var nats = new NatsConnection(new NatsOpts { Url = server });
+    var js = nats.CreateJetStreamContext();
+
+    await js.PcgElasticMemberStepDownAsync(stream, name, member, ct);
     Console.WriteLine($"Member '{member}' stepped down from group '{name}'");
-}, serverOption, elasticStepDownStreamArg, elasticStepDownNameArg, elasticStepDownMemberArg);
-elasticCommand.AddCommand(elasticStepDownCommand);
+});
+elasticCommand.Add(elasticStepDownCommand);
 
 // elastic member-info
-var elasticMemberInfoCommand = new Command("member-info", "Get member info (membership and active status)");
-elasticMemberInfoCommand.AddAlias("minfo");
-var elasticMemberInfoStreamArg = new Argument<string>("stream", "Stream name");
-var elasticMemberInfoNameArg = new Argument<string>("name", "Consumer group name");
-var elasticMemberInfoMemberArg = new Argument<string>("member", "Member name");
-elasticMemberInfoCommand.AddArgument(elasticMemberInfoStreamArg);
-elasticMemberInfoCommand.AddArgument(elasticMemberInfoNameArg);
-elasticMemberInfoCommand.AddArgument(elasticMemberInfoMemberArg);
-elasticMemberInfoCommand.SetHandler(async (server, stream, name, member) =>
+var elasticMemberInfoStreamArg = new Argument<string>("stream") { Description = "Stream name" };
+var elasticMemberInfoNameArg = new Argument<string>("name") { Description = "Consumer group name" };
+var elasticMemberInfoMemberArg = new Argument<string>("member") { Description = "Member name" };
+var elasticMemberInfoCommand = new Command("member-info", "Get member info (membership and active status)") { elasticMemberInfoStreamArg, elasticMemberInfoNameArg, elasticMemberInfoMemberArg };
+elasticMemberInfoCommand.Aliases.Add("minfo");
+elasticMemberInfoCommand.SetAction(async (parseResult, ct) =>
 {
-    await using var nats = new NatsConnection(new NatsOpts { Url = server });
-    var js = new NatsJSContext(nats);
+    var server = parseResult.GetValue(serverOption)!;
+    var stream = parseResult.GetValue(elasticMemberInfoStreamArg)!;
+    var name = parseResult.GetValue(elasticMemberInfoNameArg)!;
+    var member = parseResult.GetValue(elasticMemberInfoMemberArg)!;
 
-    var (isInMembership, isActive) = await js.IsInPcgElasticMembershipAndActiveAsync(stream, name, member);
+    await using var nats = new NatsConnection(new NatsOpts { Url = server });
+    var js = nats.CreateJetStreamContext();
+
+    var (isInMembership, isActive) = await js.IsInPcgElasticMembershipAndActiveAsync(stream, name, member, ct);
     Console.WriteLine($"Member: {member}");
     Console.WriteLine($"  In Membership: {isInMembership}");
     Console.WriteLine($"  Active:        {isActive}");
-}, serverOption, elasticMemberInfoStreamArg, elasticMemberInfoNameArg, elasticMemberInfoMemberArg);
-elasticCommand.AddCommand(elasticMemberInfoCommand);
+});
+elasticCommand.Add(elasticMemberInfoCommand);
 
-// Build and run
-var parser = new CommandLineBuilder(rootCommand)
-    .UseDefaults()
-    .Build();
-
-return await parser.InvokeAsync(args);
+// Run
+return await rootCommand.Parse(args).InvokeAsync();
 
 // Helper functions
 static NatsPcgMemberMapping[] ParseMappings(string[] mappingsStr)
