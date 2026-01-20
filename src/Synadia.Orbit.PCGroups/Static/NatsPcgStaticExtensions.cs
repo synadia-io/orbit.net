@@ -98,20 +98,18 @@ public static class NatsPcgStaticExtensions
     /// <param name="streamName">Name of the stream.</param>
     /// <param name="consumerGroupName">Name of the consumer group.</param>
     /// <param name="memberName">Name of this member.</param>
-    /// <param name="messageHandler">Handler for received messages.</param>
     /// <param name="serializer">Optional deserializer for message data.</param>
     /// <param name="config">Optional consumer configuration overrides.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A consume context for controlling the consumer.</returns>
-    public static async Task<INatsPcgConsumeContext> ConsumePcgStaticAsync<T>(
+    /// <returns>An async enumerable of messages from the consumer group.</returns>
+    public static async IAsyncEnumerable<NatsPcgMsg<T>> ConsumePcgStaticAsync<T>(
         this INatsJSContext js,
         string streamName,
         string consumerGroupName,
         string memberName,
-        Func<NatsPcgMsg<T>, CancellationToken, ValueTask> messageHandler,
         INatsDeserialize<T>? serializer = null,
         ConsumerConfig? config = null,
-        CancellationToken cancellationToken = default)
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var groupConfig = await GetPcgStaticConfigAsync(js, streamName, consumerGroupName, cancellationToken).ConfigureAwait(false);
 
@@ -126,13 +124,22 @@ public static class NatsPcgStaticExtensions
             consumerGroupName,
             memberName,
             groupConfig,
-            messageHandler,
             serializer,
             config);
 
-        await context.StartAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await context.StartAsync(cancellationToken).ConfigureAwait(false);
 
-        return context;
+            await foreach (var msg in context.WithCancellation(cancellationToken).ConfigureAwait(false))
+            {
+                yield return msg;
+            }
+        }
+        finally
+        {
+            await context.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
     /// <summary>

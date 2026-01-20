@@ -41,20 +41,15 @@ await js.CreatePcgStaticAsync(
     maxNumMembers: 3,
     filter: "orders.>");
 
-// Start consuming
-var ctx = await js.ConsumePcgStaticAsync<Order>(
+// Start consuming using async enumerable
+await foreach (var msg in js.ConsumePcgStaticAsync<Order>(
     streamName: "orders",
     consumerGroupName: "order-processors",
-    memberName: "worker-1",
-    messageHandler: async (msg, ct) =>
-    {
-        Console.WriteLine($"Processing order: {msg.Subject}");
-        await msg.AckAsync(cancellationToken: ct);
-    });
-
-// Wait for completion or stop
-ctx.Stop();
-await ctx.WaitAsync();
+    memberName: "worker-1"))
+{
+    Console.WriteLine($"Processing order: {msg.Subject}");
+    await msg.AckAsync();
+}
 ```
 
 ### Elastic Consumer Groups
@@ -83,23 +78,22 @@ await js.CreatePcgElasticAsync(
 await js.AddPcgElasticMembersAsync("events", "event-processors",
     new[] { "worker-1", "worker-2", "worker-3" });
 
-// Start consuming
-var ctx = await js.ConsumePcgElasticAsync<Event>(
+// Start consuming using async enumerable with cancellation support
+using var cts = new CancellationTokenSource();
+
+await foreach (var msg in js.ConsumePcgElasticAsync<Event>(
     streamName: "events",
     consumerGroupName: "event-processors",
     memberName: "worker-1",
-    messageHandler: async (msg, ct) =>
-    {
-        Console.WriteLine($"Processing event: {msg.Data}");
-        await msg.AckAsync(cancellationToken: ct);
-    });
+    cancellationToken: cts.Token))
+{
+    Console.WriteLine($"Processing event: {msg.Data}");
+    await msg.AckAsync();
+}
 
-// Membership can be modified at runtime
-await js.AddPcgElasticMembersAsync("events", "event-processors", new[] { "worker-4" });
-await js.DeletePcgElasticMembersAsync("events", "event-processors", new[] { "worker-2" });
-
-ctx.Stop();
-await ctx.WaitAsync();
+// Membership can be modified at runtime (from another task/process)
+// await js.AddPcgElasticMembersAsync("events", "event-processors", new[] { "worker-4" });
+// await js.DeletePcgElasticMembersAsync("events", "event-processors", new[] { "worker-2" });
 ```
 
 ## Static vs Elastic Comparison
@@ -136,7 +130,7 @@ await js.SetPcgElasticMemberMappingsAsync("events", "processors", mappings);
 
 - `CreatePcgStaticAsync` - Create a new static consumer group
 - `GetPcgStaticConfigAsync` - Get configuration for an existing group
-- `ConsumePcgStaticAsync` - Start consuming messages
+- `ConsumePcgStaticAsync` - Start consuming messages (returns `IAsyncEnumerable<NatsPcgMsg<T>>`)
 - `DeletePcgStaticAsync` - Delete a consumer group
 - `ListPcgStaticAsync` - List all consumer groups for a stream
 - `ListPcgStaticActiveMembersAsync` - List active members
@@ -146,7 +140,7 @@ await js.SetPcgElasticMemberMappingsAsync("events", "processors", mappings);
 
 - `CreatePcgElasticAsync` - Create a new elastic consumer group
 - `GetPcgElasticConfigAsync` - Get configuration for an existing group
-- `ConsumePcgElasticAsync` - Start consuming messages
+- `ConsumePcgElasticAsync` - Start consuming messages (returns `IAsyncEnumerable<NatsPcgMsg<T>>`)
 - `DeletePcgElasticAsync` - Delete a consumer group and its work-queue stream
 - `ListPcgElasticAsync` - List all consumer groups for a stream
 - `ListPcgElasticActiveMembersAsync` - List active members
