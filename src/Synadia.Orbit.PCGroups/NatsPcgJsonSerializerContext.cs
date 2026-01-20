@@ -17,6 +17,6 @@ namespace Synadia.Orbit.PCGroups;
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
-internal partial class NatsPcgJsonSerializerContext : JsonSerializerContext
+public partial class NatsPcgJsonSerializerContext : JsonSerializerContext
 {
 }

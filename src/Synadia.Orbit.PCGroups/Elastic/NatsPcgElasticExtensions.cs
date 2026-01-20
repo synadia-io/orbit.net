@@ -85,20 +85,14 @@ public static class NatsPcgElasticExtensions
         var store = await kv.GetStoreAsync(NatsPcgConstants.ElasticKvBucket, cancellationToken).ConfigureAwait(false);
 
         var key = GetKvKey(streamName, consumerGroupName);
-        var entry = await store.GetEntryAsync<string>(key, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var entry = await store.GetEntryAsync(key, serializer: NatsPcgJsonSerializer<NatsPcgElasticConfig>.Default, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         if (entry.Value == null)
         {
             throw new NatsPcgException($"Consumer group '{consumerGroupName}' not found for stream '{streamName}'");
         }
 
-        var config = JsonSerializer.Deserialize(entry.Value, NatsPcgJsonSerializerContext.Default.NatsPcgElasticConfig);
-        if (config == null)
-        {
-            throw new NatsPcgException($"Failed to deserialize config for consumer group '{consumerGroupName}'");
-        }
-
-        return config with { Revision = entry.Revision };
+        return entry.Value with { Revision = entry.Revision };
     }
 
     /// <summary>
@@ -332,17 +326,13 @@ public static class NatsPcgElasticExtensions
         const int maxRetries = 5;
         for (int retry = 0; retry < maxRetries; retry++)
         {
-            var entry = await store.GetEntryAsync<string>(key, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var entry = await store.GetEntryAsync(key, serializer: NatsPcgJsonSerializer<NatsPcgElasticConfig>.Default, cancellationToken: cancellationToken).ConfigureAwait(false);
             if (entry.Value == null)
             {
                 throw new NatsPcgException($"Consumer group '{consumerGroupName}' not found");
             }
 
-            var config = JsonSerializer.Deserialize(entry.Value, NatsPcgJsonSerializerContext.Default.NatsPcgElasticConfig);
-            if (config == null)
-            {
-                throw new NatsPcgException($"Failed to deserialize config for consumer group '{consumerGroupName}'");
-            }
+            var config = entry.Value;
 
             // Validate mappings
             foreach (var mapping in memberMappings)
@@ -403,19 +393,13 @@ public static class NatsPcgElasticExtensions
         const int maxRetries = 5;
         for (int retry = 0; retry < maxRetries; retry++)
         {
-            var entry = await store.GetEntryAsync<string>(key, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var entry = await store.GetEntryAsync(key, serializer: NatsPcgJsonSerializer<NatsPcgElasticConfig>.Default, cancellationToken: cancellationToken).ConfigureAwait(false);
             if (entry.Value == null)
             {
                 throw new NatsPcgException($"Consumer group '{consumerGroupName}' not found");
             }
 
-            var config = JsonSerializer.Deserialize(entry.Value, NatsPcgJsonSerializerContext.Default.NatsPcgElasticConfig);
-            if (config == null)
-            {
-                throw new NatsPcgException($"Failed to deserialize config for consumer group '{consumerGroupName}'");
-            }
-
-            var updatedConfig = config with { MemberMappings = null };
+            var updatedConfig = entry.Value with { MemberMappings = null };
             var json = JsonSerializer.Serialize(updatedConfig, NatsPcgJsonSerializerContext.Default.NatsPcgElasticConfig);
 
             try
@@ -604,17 +588,13 @@ public static class NatsPcgElasticExtensions
         const int maxRetries = 5;
         for (int retry = 0; retry < maxRetries; retry++)
         {
-            var entry = await store.GetEntryAsync<string>(key, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var entry = await store.GetEntryAsync(key, serializer: NatsPcgJsonSerializer<NatsPcgElasticConfig>.Default, cancellationToken: cancellationToken).ConfigureAwait(false);
             if (entry.Value == null)
             {
                 throw new NatsPcgException($"Consumer group '{consumerGroupName}' not found");
             }
 
-            var config = JsonSerializer.Deserialize(entry.Value, NatsPcgJsonSerializerContext.Default.NatsPcgElasticConfig);
-            if (config == null)
-            {
-                throw new NatsPcgException($"Failed to deserialize config for consumer group '{consumerGroupName}'");
-            }
+            var config = entry.Value;
 
             if (config.MemberMappings != null)
             {

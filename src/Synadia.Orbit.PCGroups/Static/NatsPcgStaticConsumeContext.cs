@@ -275,7 +275,7 @@ internal sealed class NatsPcgStaticConsumeContext<T> : INatsPcgConsumeContext
                         UpdatesOnly = true,
                     };
 
-                    await foreach (var entry in store.WatchAsync<string>(key, opts: watchOpts, cancellationToken: _cts.Token).ConfigureAwait(false))
+                    await foreach (var entry in store.WatchAsync(key, serializer: NatsPcgJsonSerializer<NatsPcgStaticConfig>.Default, opts: watchOpts, cancellationToken: _cts.Token).ConfigureAwait(false))
                     {
                         if (_stopped || _cts.Token.IsCancellationRequested)
                         {
@@ -291,17 +291,13 @@ internal sealed class NatsPcgStaticConsumeContext<T> : INatsPcgConsumeContext
 
                         if (entry.Value != null && entry.Revision != _config.Revision)
                         {
-                            var newConfig = JsonSerializer.Deserialize(entry.Value, NatsPcgJsonSerializerContext.Default.NatsPcgStaticConfig);
-                            if (newConfig != null)
-                            {
-                                _config = newConfig with { Revision = entry.Revision };
+                            _config = entry.Value with { Revision = entry.Revision };
 
-                                // Check if we're still in membership
-                                if (!_config.IsInMembership(_memberName))
-                                {
-                                    Stop();
-                                    break;
-                                }
+                            // Check if we're still in membership
+                            if (!_config.IsInMembership(_memberName))
+                            {
+                                Stop();
+                                break;
                             }
                         }
                     }

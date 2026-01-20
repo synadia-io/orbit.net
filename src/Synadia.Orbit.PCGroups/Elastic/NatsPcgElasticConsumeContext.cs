@@ -373,7 +373,7 @@ internal sealed class NatsPcgElasticConsumeContext<T> : INatsPcgConsumeContext
                         UpdatesOnly = true,
                     };
 
-                    await foreach (var entry in store.WatchAsync<string>(key, opts: watchOpts, cancellationToken: _cts.Token).ConfigureAwait(false))
+                    await foreach (var entry in store.WatchAsync(key, serializer: NatsPcgJsonSerializer<NatsPcgElasticConfig>.Default, opts: watchOpts, cancellationToken: _cts.Token).ConfigureAwait(false))
                     {
                         if (_stopped || _cts.Token.IsCancellationRequested)
                         {
@@ -387,26 +387,23 @@ internal sealed class NatsPcgElasticConsumeContext<T> : INatsPcgConsumeContext
                             break;
                         }
 
-                        if (entry.Value != null)
+                        if (entry.Value != null && entry.Revision != _config.Revision)
                         {
-                            var newConfig = JsonSerializer.Deserialize(entry.Value, NatsPcgJsonSerializerContext.Default.NatsPcgElasticConfig);
-                            if (newConfig != null && entry.Revision != _config.Revision)
+                            var newConfig = entry.Value with { Revision = entry.Revision };
+                            lock (_configLock)
                             {
-                                lock (_configLock)
-                                {
-                                    _config = newConfig with { Revision = entry.Revision };
-                                }
-
-                                // Check if we're still in membership
-                                if (!newConfig.IsInMembership(_memberName))
-                                {
-                                    Stop();
-                                    break;
-                                }
-
-                                // Signal that we need to check if consumer needs recreation
-                                _needsRecreate = true;
+                                _config = newConfig;
                             }
+
+                            // Check if we're still in membership
+                            if (!newConfig.IsInMembership(_memberName))
+                            {
+                                Stop();
+                                break;
+                            }
+
+                            // Signal that we need to check if consumer needs recreation
+                            _needsRecreate = true;
                         }
                     }
                 }

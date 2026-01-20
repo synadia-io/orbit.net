@@ -78,18 +78,14 @@ public static class NatsPcgStaticExtensions
         var store = await kv.GetStoreAsync(NatsPcgConstants.StaticKvBucket, cancellationToken).ConfigureAwait(false);
 
         var key = GetKvKey(streamName, consumerGroupName);
-        var entry = await store.GetEntryAsync<string>(key, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var entry = await store.GetEntryAsync(key, serializer: NatsPcgJsonSerializer<NatsPcgStaticConfig>.Default, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         if (entry.Value == null)
         {
             throw new NatsPcgException($"Consumer group '{consumerGroupName}' not found for stream '{streamName}'");
         }
 
-        var config = JsonSerializer.Deserialize(entry.Value, NatsPcgJsonSerializerContext.Default.NatsPcgStaticConfig);
-        if (config == null)
-        {
-            throw new NatsPcgException($"Failed to deserialize config for consumer group '{consumerGroupName}'");
-        }
+        var config = entry.Value;
 
         return config with { Revision = entry.Revision };
     }
