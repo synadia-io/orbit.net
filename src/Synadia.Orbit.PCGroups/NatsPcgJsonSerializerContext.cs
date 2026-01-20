@@ -10,13 +10,13 @@ namespace Synadia.Orbit.PCGroups;
 /// <summary>
 /// JSON serializer context for partitioned consumer group types.
 /// </summary>
-[JsonSerializable(typeof(NatsPCStaticConfig))]
-[JsonSerializable(typeof(NatsPCElasticConfig))]
-[JsonSerializable(typeof(NatsPCMemberMapping))]
-[JsonSerializable(typeof(NatsPCMemberMapping[]))]
+[JsonSerializable(typeof(NatsPcgStaticConfig))]
+[JsonSerializable(typeof(NatsPcgElasticConfig))]
+[JsonSerializable(typeof(NatsPcgMemberMapping))]
+[JsonSerializable(typeof(NatsPcgMemberMapping[]))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
-internal partial class NatsPCJsonSerializerContext : JsonSerializerContext
+internal partial class NatsPcgJsonSerializerContext : JsonSerializerContext
 {
 }

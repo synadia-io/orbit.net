@@ -26,23 +26,23 @@ dotnet add package Synadia.Orbit.PCGroups
 Static groups have a fixed membership that cannot change after creation.
 
 ```csharp
-using Synadia.Orbit.PCGroups.Static;
+using NATS.Client.Core;
 using NATS.Net;
+using Synadia.Orbit.PCGroups;
+using Synadia.Orbit.PCGroups.Static;
 
-await using var nats = new NatsClient("nats://localhost:4222");
+await using var nats = new NatsConnection(new NatsOpts { Url = "nats://localhost:4222" });
 var js = nats.CreateJetStreamContext();
 
 // Create a static consumer group with 3 partitions
-await NatsPCStatic.CreateAsync(
-    js,
+await js.CreatePcgStaticAsync(
     streamName: "orders",
     consumerGroupName: "order-processors",
     maxNumMembers: 3,
     filter: "orders.>");
 
 // Start consuming
-var ctx = await NatsPCStatic.ConsumeAsync<Order>(
-    js,
+var ctx = await js.ConsumePcgStaticAsync<Order>(
     streamName: "orders",
     consumerGroupName: "order-processors",
     memberName: "worker-1",
@@ -62,16 +62,17 @@ await ctx.WaitAsync();
 Elastic groups allow dynamic membership changes at runtime.
 
 ```csharp
-using Synadia.Orbit.PCGroups.Elastic;
+using NATS.Client.Core;
 using NATS.Net;
+using Synadia.Orbit.PCGroups;
+using Synadia.Orbit.PCGroups.Elastic;
 
-await using var nats = new NatsClient("nats://localhost:4222");
+await using var nats = new NatsConnection(new NatsOpts { Url = "nats://localhost:4222" });
 var js = nats.CreateJetStreamContext();
 
 // Create an elastic consumer group
 // Partitioning is based on the first wildcard token in the subject
-await NatsPCElastic.CreateAsync(
-    js,
+await js.CreatePcgElasticAsync(
     streamName: "events",
     consumerGroupName: "event-processors",
     maxNumMembers: 10,
@@ -79,13 +80,11 @@ await NatsPCElastic.CreateAsync(
     partitioningWildcards: [1]);  // Partition by the first wildcard (user ID)
 
 // Add members dynamically
-await NatsPCElastic.AddMembersAsync(
-    js, "events", "event-processors",
+await js.AddPcgElasticMembersAsync("events", "event-processors",
     new[] { "worker-1", "worker-2", "worker-3" });
 
 // Start consuming
-var ctx = await NatsPCElastic.ConsumeAsync<Event>(
-    js,
+var ctx = await js.ConsumePcgElasticAsync<Event>(
     streamName: "events",
     consumerGroupName: "event-processors",
     memberName: "worker-1",
@@ -96,8 +95,8 @@ var ctx = await NatsPCElastic.ConsumeAsync<Event>(
     });
 
 // Membership can be modified at runtime
-await NatsPCElastic.AddMembersAsync(js, "events", "event-processors", new[] { "worker-4" });
-await NatsPCElastic.DeleteMembersAsync(js, "events", "event-processors", new[] { "worker-2" });
+await js.AddPcgElasticMembersAsync("events", "event-processors", new[] { "worker-4" });
+await js.DeletePcgElasticMembersAsync("events", "event-processors", new[] { "worker-2" });
 
 ctx.Stop();
 await ctx.WaitAsync();
@@ -120,46 +119,44 @@ For fine-grained control over partition distribution:
 // Define explicit member-to-partition mappings
 var mappings = new[]
 {
-    new NatsPCMemberMapping("high-priority-worker", new[] { 0, 1, 2 }),
-    new NatsPCMemberMapping("low-priority-worker", new[] { 3, 4, 5 }),
+    new NatsPcgMemberMapping("high-priority-worker", [0, 1, 2]),
+    new NatsPcgMemberMapping("low-priority-worker", [3, 4, 5]),
 };
 
-await NatsPCStatic.CreateAsync(
-    js, "orders", "processors", maxNumMembers: 6,
+await js.CreatePcgStaticAsync("orders", "processors", maxNumMembers: 6,
     memberMappings: mappings);
 
 // For elastic groups
-await NatsPCElastic.SetMemberMappingsAsync(
-    js, "events", "processors", mappings);
+await js.SetPcgElasticMemberMappingsAsync("events", "processors", mappings);
 ```
 
 ## API Reference
 
-### Static Consumer Groups (`NatsPCStatic`)
+### Static Consumer Groups (Extension methods on `INatsJSContext`)
 
-- `CreateAsync` - Create a new static consumer group
-- `GetConfigAsync` - Get configuration for an existing group
-- `ConsumeAsync` - Start consuming messages
-- `DeleteAsync` - Delete a consumer group
-- `ListAsync` - List all consumer groups for a stream
-- `ListActiveMembersAsync` - List active members
-- `MemberStepDownAsync` - Force a member to step down
+- `CreatePcgStaticAsync` - Create a new static consumer group
+- `GetPcgStaticConfigAsync` - Get configuration for an existing group
+- `ConsumePcgStaticAsync` - Start consuming messages
+- `DeletePcgStaticAsync` - Delete a consumer group
+- `ListPcgStaticAsync` - List all consumer groups for a stream
+- `ListPcgStaticActiveMembersAsync` - List active members
+- `PcgStaticMemberStepDownAsync` - Force a member to step down
 
-### Elastic Consumer Groups (`NatsPCElastic`)
+### Elastic Consumer Groups (Extension methods on `INatsJSContext`)
 
-- `CreateAsync` - Create a new elastic consumer group
-- `GetConfigAsync` - Get configuration for an existing group
-- `ConsumeAsync` - Start consuming messages
-- `DeleteAsync` - Delete a consumer group and its work-queue stream
-- `ListAsync` - List all consumer groups for a stream
-- `ListActiveMembersAsync` - List active members
-- `AddMembersAsync` - Add members to the group
-- `DeleteMembersAsync` - Remove members from the group
-- `SetMemberMappingsAsync` - Set explicit partition mappings
-- `DeleteMemberMappingsAsync` - Remove mappings (revert to auto-distribution)
-- `IsInMembershipAndActiveAsync` - Check if a member is in the group and active
-- `GetPartitionFilters` - Get partition filters for a member
-- `MemberStepDownAsync` - Force a member to step down
+- `CreatePcgElasticAsync` - Create a new elastic consumer group
+- `GetPcgElasticConfigAsync` - Get configuration for an existing group
+- `ConsumePcgElasticAsync` - Start consuming messages
+- `DeletePcgElasticAsync` - Delete a consumer group and its work-queue stream
+- `ListPcgElasticAsync` - List all consumer groups for a stream
+- `ListPcgElasticActiveMembersAsync` - List active members
+- `AddPcgElasticMembersAsync` - Add members to the group
+- `DeletePcgElasticMembersAsync` - Remove members from the group
+- `SetPcgElasticMemberMappingsAsync` - Set explicit partition mappings
+- `DeletePcgElasticMemberMappingsAsync` - Remove mappings (revert to auto-distribution)
+- `IsInPcgElasticMembershipAndActiveAsync` - Check if a member is in the group and active
+- `GetPcgElasticPartitionFilters` - Get partition filters for a member (extension on `NatsPcgElasticConfig`)
+- `PcgElasticMemberStepDownAsync` - Force a member to step down
 
 ## How It Works
 

@@ -15,7 +15,7 @@ namespace Synadia.Orbit.PCGroups.Elastic;
 /// Elastic partitioned consumer group operations.
 /// Elastic groups allow dynamic membership changes at runtime.
 /// </summary>
-public static class NatsPCElastic
+public static class NatsPcgElasticExtensions
 {
     /// <summary>
     /// Creates an elastic consumer group.
@@ -30,8 +30,8 @@ public static class NatsPCElastic
     /// <param name="maxBufferedBytes">Optional maximum bytes of buffered messages.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The created configuration.</returns>
-    public static async Task<NatsPCElasticConfig> CreateAsync(
-        INatsJSContext js,
+    public static async Task<NatsPcgElasticConfig> CreatePcgElasticAsync(
+        this INatsJSContext js,
         string streamName,
         string consumerGroupName,
         uint maxNumMembers,
@@ -43,7 +43,7 @@ public static class NatsPCElastic
     {
         ValidateConfig(maxNumMembers, filter, partitioningWildcards);
 
-        var config = new NatsPCElasticConfig
+        var config = new NatsPcgElasticConfig
         {
             MaxMembers = maxNumMembers,
             Filter = filter,
@@ -60,7 +60,7 @@ public static class NatsPCElastic
         var store = await GetOrCreateKvStoreAsync(kv, cancellationToken).ConfigureAwait(false);
 
         var key = GetKvKey(streamName, consumerGroupName);
-        var json = JsonSerializer.Serialize(config, NatsPCJsonSerializerContext.Default.NatsPCElasticConfig);
+        var json = JsonSerializer.Serialize(config, NatsPcgJsonSerializerContext.Default.NatsPcgElasticConfig);
 
         var revision = await store.CreateAsync(key, json, cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -75,27 +75,27 @@ public static class NatsPCElastic
     /// <param name="consumerGroupName">Name of the consumer group.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The configuration.</returns>
-    public static async Task<NatsPCElasticConfig> GetConfigAsync(
-        INatsJSContext js,
+    public static async Task<NatsPcgElasticConfig> GetPcgElasticConfigAsync(
+        this INatsJSContext js,
         string streamName,
         string consumerGroupName,
         CancellationToken cancellationToken = default)
     {
         var kv = js.Connection.CreateKeyValueStoreContext();
-        var store = await kv.GetStoreAsync(NatsPCConstants.ElasticKvBucket, cancellationToken).ConfigureAwait(false);
+        var store = await kv.GetStoreAsync(NatsPcgConstants.ElasticKvBucket, cancellationToken).ConfigureAwait(false);
 
         var key = GetKvKey(streamName, consumerGroupName);
         var entry = await store.GetEntryAsync<string>(key, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         if (entry.Value == null)
         {
-            throw new NatsPCException($"Consumer group '{consumerGroupName}' not found for stream '{streamName}'");
+            throw new NatsPcgException($"Consumer group '{consumerGroupName}' not found for stream '{streamName}'");
         }
 
-        var config = JsonSerializer.Deserialize(entry.Value, NatsPCJsonSerializerContext.Default.NatsPCElasticConfig);
+        var config = JsonSerializer.Deserialize(entry.Value, NatsPcgJsonSerializerContext.Default.NatsPcgElasticConfig);
         if (config == null)
         {
-            throw new NatsPCException($"Failed to deserialize config for consumer group '{consumerGroupName}'");
+            throw new NatsPcgException($"Failed to deserialize config for consumer group '{consumerGroupName}'");
         }
 
         return config with { Revision = entry.Revision };
@@ -114,30 +114,30 @@ public static class NatsPCElastic
     /// <param name="config">Optional consumer configuration overrides.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A consume context for controlling the consumer.</returns>
-    public static async Task<INatsPCConsumeContext> ConsumeAsync<T>(
-        INatsJSContext js,
+    public static async Task<INatsPcgConsumeContext> ConsumePcgElasticAsync<T>(
+        this INatsJSContext js,
         string streamName,
         string consumerGroupName,
         string memberName,
-        Func<NatsPCGroupMsg<T>, CancellationToken, ValueTask> messageHandler,
+        Func<NatsPcgMsg<T>, CancellationToken, ValueTask> messageHandler,
         INatsDeserialize<T>? serializer = null,
         ConsumerConfig? config = null,
         CancellationToken cancellationToken = default)
     {
-        var groupConfig = await GetConfigAsync(js, streamName, consumerGroupName, cancellationToken).ConfigureAwait(false);
+        var groupConfig = await GetPcgElasticConfigAsync(js, streamName, consumerGroupName, cancellationToken).ConfigureAwait(false);
 
         if (!groupConfig.IsInMembership(memberName))
         {
-            throw new NatsPCMembershipException($"Member '{memberName}' is not in membership for consumer group '{consumerGroupName}'");
+            throw new NatsPcgMembershipException($"Member '{memberName}' is not in membership for consumer group '{consumerGroupName}'");
         }
 
         // Elastic groups require explicit ack
         if (config?.AckPolicy == ConsumerConfigAckPolicy.None)
         {
-            throw new NatsPCConfigurationException("Elastic consumer groups require explicit acknowledgment policy");
+            throw new NatsPcgConfigurationException("Elastic consumer groups require explicit acknowledgment policy");
         }
 
-        var context = new NatsPCElasticConsumeContext<T>(
+        var context = new NatsPcgElasticConsumeContext<T>(
             js,
             streamName,
             consumerGroupName,
@@ -159,8 +159,8 @@ public static class NatsPCElastic
     /// <param name="streamName">Name of the source stream.</param>
     /// <param name="consumerGroupName">Name of the consumer group.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    public static async Task DeleteAsync(
-        INatsJSContext js,
+    public static async Task DeletePcgElasticAsync(
+        this INatsJSContext js,
         string streamName,
         string consumerGroupName,
         CancellationToken cancellationToken = default)
@@ -169,7 +169,7 @@ public static class NatsPCElastic
         var kv = js.Connection.CreateKeyValueStoreContext();
         try
         {
-            var store = await kv.GetStoreAsync(NatsPCConstants.ElasticKvBucket, cancellationToken).ConfigureAwait(false);
+            var store = await kv.GetStoreAsync(NatsPcgConstants.ElasticKvBucket, cancellationToken).ConfigureAwait(false);
             var key = GetKvKey(streamName, consumerGroupName);
             await store.DeleteAsync(key, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
@@ -197,8 +197,8 @@ public static class NatsPCElastic
     /// <param name="streamName">Name of the source stream.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Consumer group names.</returns>
-    public static async IAsyncEnumerable<string> ListAsync(
-        INatsJSContext js,
+    public static async IAsyncEnumerable<string> ListPcgElasticAsync(
+        this INatsJSContext js,
         string streamName,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
@@ -207,7 +207,7 @@ public static class NatsPCElastic
         INatsKVStore store;
         try
         {
-            store = await kv.GetStoreAsync(NatsPCConstants.ElasticKvBucket, cancellationToken).ConfigureAwait(false);
+            store = await kv.GetStoreAsync(NatsPcgConstants.ElasticKvBucket, cancellationToken).ConfigureAwait(false);
         }
         catch (NatsJSApiException ex) when (ex.Error.Code == 404)
         {
@@ -233,8 +233,8 @@ public static class NatsPCElastic
     /// <param name="consumerGroupName">Name of the consumer group.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Active member names.</returns>
-    public static async IAsyncEnumerable<string> ListActiveMembersAsync(
-        INatsJSContext js,
+    public static async IAsyncEnumerable<string> ListPcgElasticActiveMembersAsync(
+        this INatsJSContext js,
         string streamName,
         string consumerGroupName,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -280,8 +280,8 @@ public static class NatsPCElastic
     /// <param name="memberNamesToAdd">Member names to add.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Updated member list.</returns>
-    public static async Task<string[]> AddMembersAsync(
-        INatsJSContext js,
+    public static async Task<string[]> AddPcgElasticMembersAsync(
+        this INatsJSContext js,
         string streamName,
         string consumerGroupName,
         string[] memberNamesToAdd,
@@ -299,8 +299,8 @@ public static class NatsPCElastic
     /// <param name="memberNamesToDrop">Member names to remove.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Updated member list.</returns>
-    public static async Task<string[]> DeleteMembersAsync(
-        INatsJSContext js,
+    public static async Task<string[]> DeletePcgElasticMembersAsync(
+        this INatsJSContext js,
         string streamName,
         string consumerGroupName,
         string[] memberNamesToDrop,
@@ -317,15 +317,15 @@ public static class NatsPCElastic
     /// <param name="consumerGroupName">Name of the consumer group.</param>
     /// <param name="memberMappings">Member-to-partition mappings.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    public static async Task SetMemberMappingsAsync(
-        INatsJSContext js,
+    public static async Task SetPcgElasticMemberMappingsAsync(
+        this INatsJSContext js,
         string streamName,
         string consumerGroupName,
-        NatsPCMemberMapping[] memberMappings,
+        NatsPcgMemberMapping[] memberMappings,
         CancellationToken cancellationToken = default)
     {
         var kv = js.Connection.CreateKeyValueStoreContext();
-        var store = await kv.GetStoreAsync(NatsPCConstants.ElasticKvBucket, cancellationToken).ConfigureAwait(false);
+        var store = await kv.GetStoreAsync(NatsPcgConstants.ElasticKvBucket, cancellationToken).ConfigureAwait(false);
         var key = GetKvKey(streamName, consumerGroupName);
 
         // Retry loop for optimistic concurrency
@@ -335,13 +335,13 @@ public static class NatsPCElastic
             var entry = await store.GetEntryAsync<string>(key, cancellationToken: cancellationToken).ConfigureAwait(false);
             if (entry.Value == null)
             {
-                throw new NatsPCException($"Consumer group '{consumerGroupName}' not found");
+                throw new NatsPcgException($"Consumer group '{consumerGroupName}' not found");
             }
 
-            var config = JsonSerializer.Deserialize(entry.Value, NatsPCJsonSerializerContext.Default.NatsPCElasticConfig);
+            var config = JsonSerializer.Deserialize(entry.Value, NatsPcgJsonSerializerContext.Default.NatsPcgElasticConfig);
             if (config == null)
             {
-                throw new NatsPCException($"Failed to deserialize config for consumer group '{consumerGroupName}'");
+                throw new NatsPcgException($"Failed to deserialize config for consumer group '{consumerGroupName}'");
             }
 
             // Validate mappings
@@ -351,7 +351,7 @@ public static class NatsPCElastic
                 {
                     if (partition < 0 || partition >= config.MaxMembers)
                     {
-                        throw new NatsPCConfigurationException($"Partition {partition} is out of range [0, {config.MaxMembers})");
+                        throw new NatsPcgConfigurationException($"Partition {partition} is out of range [0, {config.MaxMembers})");
                     }
                 }
             }
@@ -362,7 +362,7 @@ public static class NatsPCElastic
                 MemberMappings = memberMappings,
             };
 
-            var json = JsonSerializer.Serialize(updatedConfig, NatsPCJsonSerializerContext.Default.NatsPCElasticConfig);
+            var json = JsonSerializer.Serialize(updatedConfig, NatsPcgJsonSerializerContext.Default.NatsPcgElasticConfig);
 
             try
             {
@@ -379,7 +379,7 @@ public static class NatsPCElastic
             }
         }
 
-        throw new NatsPCException("Failed to update config after maximum retries");
+        throw new NatsPcgException("Failed to update config after maximum retries");
     }
 
     /// <summary>
@@ -389,14 +389,14 @@ public static class NatsPCElastic
     /// <param name="streamName">Name of the source stream.</param>
     /// <param name="consumerGroupName">Name of the consumer group.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    public static async Task DeleteMemberMappingsAsync(
-        INatsJSContext js,
+    public static async Task DeletePcgElasticMemberMappingsAsync(
+        this INatsJSContext js,
         string streamName,
         string consumerGroupName,
         CancellationToken cancellationToken = default)
     {
         var kv = js.Connection.CreateKeyValueStoreContext();
-        var store = await kv.GetStoreAsync(NatsPCConstants.ElasticKvBucket, cancellationToken).ConfigureAwait(false);
+        var store = await kv.GetStoreAsync(NatsPcgConstants.ElasticKvBucket, cancellationToken).ConfigureAwait(false);
         var key = GetKvKey(streamName, consumerGroupName);
 
         // Retry loop for optimistic concurrency
@@ -406,17 +406,17 @@ public static class NatsPCElastic
             var entry = await store.GetEntryAsync<string>(key, cancellationToken: cancellationToken).ConfigureAwait(false);
             if (entry.Value == null)
             {
-                throw new NatsPCException($"Consumer group '{consumerGroupName}' not found");
+                throw new NatsPcgException($"Consumer group '{consumerGroupName}' not found");
             }
 
-            var config = JsonSerializer.Deserialize(entry.Value, NatsPCJsonSerializerContext.Default.NatsPCElasticConfig);
+            var config = JsonSerializer.Deserialize(entry.Value, NatsPcgJsonSerializerContext.Default.NatsPcgElasticConfig);
             if (config == null)
             {
-                throw new NatsPCException($"Failed to deserialize config for consumer group '{consumerGroupName}'");
+                throw new NatsPcgException($"Failed to deserialize config for consumer group '{consumerGroupName}'");
             }
 
             var updatedConfig = config with { MemberMappings = null };
-            var json = JsonSerializer.Serialize(updatedConfig, NatsPCJsonSerializerContext.Default.NatsPCElasticConfig);
+            var json = JsonSerializer.Serialize(updatedConfig, NatsPcgJsonSerializerContext.Default.NatsPcgElasticConfig);
 
             try
             {
@@ -433,7 +433,7 @@ public static class NatsPCElastic
             }
         }
 
-        throw new NatsPCException("Failed to update config after maximum retries");
+        throw new NatsPcgException("Failed to update config after maximum retries");
     }
 
     /// <summary>
@@ -445,14 +445,14 @@ public static class NatsPCElastic
     /// <param name="memberName">Member name to check.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Tuple of (IsInMembership, IsActive).</returns>
-    public static async Task<(bool IsInMembership, bool IsActive)> IsInMembershipAndActiveAsync(
-        INatsJSContext js,
+    public static async Task<(bool IsInMembership, bool IsActive)> IsInPcgElasticMembershipAndActiveAsync(
+        this INatsJSContext js,
         string streamName,
         string consumerGroupName,
         string memberName,
         CancellationToken cancellationToken = default)
     {
-        var config = await GetConfigAsync(js, streamName, consumerGroupName, cancellationToken).ConfigureAwait(false);
+        var config = await GetPcgElasticConfigAsync(js, streamName, consumerGroupName, cancellationToken).ConfigureAwait(false);
         var isInMembership = config.IsInMembership(memberName);
 
         if (!isInMembership)
@@ -462,7 +462,7 @@ public static class NatsPCElastic
 
         // Check if active
         var isActive = false;
-        await foreach (var activeMember in ListActiveMembersAsync(js, streamName, consumerGroupName, cancellationToken).ConfigureAwait(false))
+        await foreach (var activeMember in ListPcgElasticActiveMembersAsync(js, streamName, consumerGroupName, cancellationToken).ConfigureAwait(false))
         {
             if (activeMember == memberName)
             {
@@ -480,9 +480,9 @@ public static class NatsPCElastic
     /// <param name="config">Consumer group configuration.</param>
     /// <param name="memberName">Member name.</param>
     /// <returns>Array of partition filters.</returns>
-    public static string[] GetPartitionFilters(NatsPCElasticConfig config, string memberName)
+    public static string[] GetPcgElasticPartitionFilters(this NatsPcgElasticConfig config, string memberName)
     {
-        return NatsPCPartitionDistributor.GeneratePartitionFilters(
+        return NatsPcgPartitionDistributor.GeneratePartitionFilters(
             config.Members,
             config.MaxMembers,
             config.MemberMappings,
@@ -497,8 +497,8 @@ public static class NatsPCElastic
     /// <param name="consumerGroupName">Name of the consumer group.</param>
     /// <param name="memberName">Name of the member to step down.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    public static async Task MemberStepDownAsync(
-        INatsJSContext js,
+    public static async Task PcgElasticMemberStepDownAsync(
+        this INatsJSContext js,
         string streamName,
         string consumerGroupName,
         string memberName,
@@ -508,24 +508,24 @@ public static class NatsPCElastic
         var consumerName = GetConsumerName(consumerGroupName);
         var consumer = await js.GetConsumerAsync(workQueueStreamName, consumerName, cancellationToken).ConfigureAwait(false);
 
-        await consumer.UnpinAsync(NatsPCConstants.PriorityGroupName, cancellationToken).ConfigureAwait(false);
+        await consumer.UnpinAsync(NatsPcgConstants.PriorityGroupName, cancellationToken).ConfigureAwait(false);
     }
 
     private static void ValidateConfig(uint maxNumMembers, string filter, int[] partitioningWildcards)
     {
         if (maxNumMembers == 0)
         {
-            throw new NatsPCConfigurationException("maxNumMembers must be greater than 0");
+            throw new NatsPcgConfigurationException("maxNumMembers must be greater than 0");
         }
 
         if (string.IsNullOrEmpty(filter))
         {
-            throw new NatsPCConfigurationException("filter is required for elastic consumer groups");
+            throw new NatsPcgConfigurationException("filter is required for elastic consumer groups");
         }
 
         if (partitioningWildcards == null || partitioningWildcards.Length == 0)
         {
-            throw new NatsPCConfigurationException("partitioningWildcards must contain at least one element");
+            throw new NatsPcgConfigurationException("partitioningWildcards must contain at least one element");
         }
 
         // Validate wildcard positions are valid (1-indexed)
@@ -533,7 +533,7 @@ public static class NatsPCElastic
         {
             if (pos < 1)
             {
-                throw new NatsPCConfigurationException($"Wildcard position {pos} is invalid (must be >= 1)");
+                throw new NatsPcgConfigurationException($"Wildcard position {pos} is invalid (must be >= 1)");
             }
         }
     }
@@ -542,7 +542,7 @@ public static class NatsPCElastic
         INatsJSContext js,
         string streamName,
         string consumerGroupName,
-        NatsPCElasticConfig config,
+        NatsPcgElasticConfig config,
         CancellationToken cancellationToken)
     {
         var workQueueStreamName = GetWorkQueueStreamName(streamName, consumerGroupName);
@@ -597,7 +597,7 @@ public static class NatsPCElastic
         CancellationToken cancellationToken)
     {
         var kv = js.Connection.CreateKeyValueStoreContext();
-        var store = await kv.GetStoreAsync(NatsPCConstants.ElasticKvBucket, cancellationToken).ConfigureAwait(false);
+        var store = await kv.GetStoreAsync(NatsPcgConstants.ElasticKvBucket, cancellationToken).ConfigureAwait(false);
         var key = GetKvKey(streamName, consumerGroupName);
 
         // Retry loop for optimistic concurrency
@@ -607,18 +607,18 @@ public static class NatsPCElastic
             var entry = await store.GetEntryAsync<string>(key, cancellationToken: cancellationToken).ConfigureAwait(false);
             if (entry.Value == null)
             {
-                throw new NatsPCException($"Consumer group '{consumerGroupName}' not found");
+                throw new NatsPcgException($"Consumer group '{consumerGroupName}' not found");
             }
 
-            var config = JsonSerializer.Deserialize(entry.Value, NatsPCJsonSerializerContext.Default.NatsPCElasticConfig);
+            var config = JsonSerializer.Deserialize(entry.Value, NatsPcgJsonSerializerContext.Default.NatsPcgElasticConfig);
             if (config == null)
             {
-                throw new NatsPCException($"Failed to deserialize config for consumer group '{consumerGroupName}'");
+                throw new NatsPcgException($"Failed to deserialize config for consumer group '{consumerGroupName}'");
             }
 
             if (config.MemberMappings != null)
             {
-                throw new NatsPCConfigurationException("Cannot modify members when member mappings are defined");
+                throw new NatsPcgConfigurationException("Cannot modify members when member mappings are defined");
             }
 
             var currentMembers = config.Members != null
@@ -642,7 +642,7 @@ public static class NatsPCElastic
 
             var updatedMembers = currentMembers.Count > 0 ? currentMembers.ToArray() : null;
             var updatedConfig = config with { Members = updatedMembers };
-            var json = JsonSerializer.Serialize(updatedConfig, NatsPCJsonSerializerContext.Default.NatsPCElasticConfig);
+            var json = JsonSerializer.Serialize(updatedConfig, NatsPcgJsonSerializerContext.Default.NatsPcgElasticConfig);
 
             try
             {
@@ -659,12 +659,12 @@ public static class NatsPCElastic
             }
         }
 
-        throw new NatsPCException("Failed to update config after maximum retries");
+        throw new NatsPcgException("Failed to update config after maximum retries");
     }
 
     private static async Task<INatsKVStore> GetOrCreateKvStoreAsync(INatsKVContext kv, CancellationToken cancellationToken)
     {
-        return await kv.CreateOrUpdateStoreAsync(new NatsKVConfig(NatsPCConstants.ElasticKvBucket), cancellationToken).ConfigureAwait(false);
+        return await kv.CreateOrUpdateStoreAsync(new NatsKVConfig(NatsPcgConstants.ElasticKvBucket), cancellationToken).ConfigureAwait(false);
     }
 
     internal static string GetKvKey(string streamName, string consumerGroupName)

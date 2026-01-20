@@ -6,7 +6,7 @@ namespace Synadia.Orbit.PCGroups;
 /// <summary>
 /// Represents a consume context for a partitioned consumer group.
 /// </summary>
-public interface INatsPCConsumeContext : IAsyncDisposable
+public interface INatsPcgConsumeContext : IAsyncDisposable
 {
     /// <summary>
     /// Stops the consumer from processing messages.

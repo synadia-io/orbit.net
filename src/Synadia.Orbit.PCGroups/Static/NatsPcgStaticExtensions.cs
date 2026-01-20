@@ -15,7 +15,7 @@ namespace Synadia.Orbit.PCGroups.Static;
 /// Static partitioned consumer group operations.
 /// Static groups have a fixed membership that is defined at creation time.
 /// </summary>
-public static class NatsPCStatic
+public static class NatsPcgStaticExtensions
 {
     /// <summary>
     /// Creates a static consumer group.
@@ -29,14 +29,14 @@ public static class NatsPCStatic
     /// <param name="memberMappings">Optional explicit member-to-partition mappings.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The created configuration.</returns>
-    public static async Task<NatsPCStaticConfig> CreateAsync(
-        INatsJSContext js,
+    public static async Task<NatsPcgStaticConfig> CreatePcgStaticAsync(
+        this INatsJSContext js,
         string streamName,
         string consumerGroupName,
         uint maxNumMembers,
         string? filter = null,
         string[]? members = null,
-        NatsPCMemberMapping[]? memberMappings = null,
+        NatsPcgMemberMapping[]? memberMappings = null,
         CancellationToken cancellationToken = default)
     {
         ValidateConfig(maxNumMembers, members, memberMappings);
@@ -44,7 +44,7 @@ public static class NatsPCStatic
         var kv = js.Connection.CreateKeyValueStoreContext();
         var store = await GetOrCreateKvStoreAsync(kv, cancellationToken).ConfigureAwait(false);
 
-        var config = new NatsPCStaticConfig
+        var config = new NatsPcgStaticConfig
         {
             MaxMembers = maxNumMembers,
             Filter = filter,
@@ -53,7 +53,7 @@ public static class NatsPCStatic
         };
 
         var key = GetKvKey(streamName, consumerGroupName);
-        var json = JsonSerializer.Serialize(config, NatsPCJsonSerializerContext.Default.NatsPCStaticConfig);
+        var json = JsonSerializer.Serialize(config, NatsPcgJsonSerializerContext.Default.NatsPcgStaticConfig);
 
         var revision = await store.CreateAsync(key, json, cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -68,27 +68,27 @@ public static class NatsPCStatic
     /// <param name="consumerGroupName">Name of the consumer group.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The configuration.</returns>
-    public static async Task<NatsPCStaticConfig> GetConfigAsync(
-        INatsJSContext js,
+    public static async Task<NatsPcgStaticConfig> GetPcgStaticConfigAsync(
+        this INatsJSContext js,
         string streamName,
         string consumerGroupName,
         CancellationToken cancellationToken = default)
     {
         var kv = js.Connection.CreateKeyValueStoreContext();
-        var store = await kv.GetStoreAsync(NatsPCConstants.StaticKvBucket, cancellationToken).ConfigureAwait(false);
+        var store = await kv.GetStoreAsync(NatsPcgConstants.StaticKvBucket, cancellationToken).ConfigureAwait(false);
 
         var key = GetKvKey(streamName, consumerGroupName);
         var entry = await store.GetEntryAsync<string>(key, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         if (entry.Value == null)
         {
-            throw new NatsPCException($"Consumer group '{consumerGroupName}' not found for stream '{streamName}'");
+            throw new NatsPcgException($"Consumer group '{consumerGroupName}' not found for stream '{streamName}'");
         }
 
-        var config = JsonSerializer.Deserialize(entry.Value, NatsPCJsonSerializerContext.Default.NatsPCStaticConfig);
+        var config = JsonSerializer.Deserialize(entry.Value, NatsPcgJsonSerializerContext.Default.NatsPcgStaticConfig);
         if (config == null)
         {
-            throw new NatsPCException($"Failed to deserialize config for consumer group '{consumerGroupName}'");
+            throw new NatsPcgException($"Failed to deserialize config for consumer group '{consumerGroupName}'");
         }
 
         return config with { Revision = entry.Revision };
@@ -107,24 +107,24 @@ public static class NatsPCStatic
     /// <param name="config">Optional consumer configuration overrides.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A consume context for controlling the consumer.</returns>
-    public static async Task<INatsPCConsumeContext> ConsumeAsync<T>(
-        INatsJSContext js,
+    public static async Task<INatsPcgConsumeContext> ConsumePcgStaticAsync<T>(
+        this INatsJSContext js,
         string streamName,
         string consumerGroupName,
         string memberName,
-        Func<NatsPCGroupMsg<T>, CancellationToken, ValueTask> messageHandler,
+        Func<NatsPcgMsg<T>, CancellationToken, ValueTask> messageHandler,
         INatsDeserialize<T>? serializer = null,
         ConsumerConfig? config = null,
         CancellationToken cancellationToken = default)
     {
-        var groupConfig = await GetConfigAsync(js, streamName, consumerGroupName, cancellationToken).ConfigureAwait(false);
+        var groupConfig = await GetPcgStaticConfigAsync(js, streamName, consumerGroupName, cancellationToken).ConfigureAwait(false);
 
         if (!groupConfig.IsInMembership(memberName))
         {
-            throw new NatsPCMembershipException($"Member '{memberName}' is not in membership for consumer group '{consumerGroupName}'");
+            throw new NatsPcgMembershipException($"Member '{memberName}' is not in membership for consumer group '{consumerGroupName}'");
         }
 
-        var context = new NatsPCStaticConsumeContext<T>(
+        var context = new NatsPcgStaticConsumeContext<T>(
             js,
             streamName,
             consumerGroupName,
@@ -146,14 +146,14 @@ public static class NatsPCStatic
     /// <param name="streamName">Name of the stream.</param>
     /// <param name="consumerGroupName">Name of the consumer group.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    public static async Task DeleteAsync(
-        INatsJSContext js,
+    public static async Task DeletePcgStaticAsync(
+        this INatsJSContext js,
         string streamName,
         string consumerGroupName,
         CancellationToken cancellationToken = default)
     {
         var kv = js.Connection.CreateKeyValueStoreContext();
-        var store = await kv.GetStoreAsync(NatsPCConstants.StaticKvBucket, cancellationToken).ConfigureAwait(false);
+        var store = await kv.GetStoreAsync(NatsPcgConstants.StaticKvBucket, cancellationToken).ConfigureAwait(false);
 
         var key = GetKvKey(streamName, consumerGroupName);
         await store.DeleteAsync(key, cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -166,8 +166,8 @@ public static class NatsPCStatic
     /// <param name="streamName">Name of the stream.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Consumer group names.</returns>
-    public static async IAsyncEnumerable<string> ListAsync(
-        INatsJSContext js,
+    public static async IAsyncEnumerable<string> ListPcgStaticAsync(
+        this INatsJSContext js,
         string streamName,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
@@ -176,7 +176,7 @@ public static class NatsPCStatic
         INatsKVStore store;
         try
         {
-            store = await kv.GetStoreAsync(NatsPCConstants.StaticKvBucket, cancellationToken).ConfigureAwait(false);
+            store = await kv.GetStoreAsync(NatsPcgConstants.StaticKvBucket, cancellationToken).ConfigureAwait(false);
         }
         catch (NatsJSApiException ex) when (ex.Error.Code == 404)
         {
@@ -202,8 +202,8 @@ public static class NatsPCStatic
     /// <param name="consumerGroupName">Name of the consumer group.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Active member names.</returns>
-    public static async IAsyncEnumerable<string> ListActiveMembersAsync(
-        INatsJSContext js,
+    public static async IAsyncEnumerable<string> ListPcgStaticActiveMembersAsync(
+        this INatsJSContext js,
         string streamName,
         string consumerGroupName,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -247,8 +247,8 @@ public static class NatsPCStatic
     /// <param name="consumerGroupName">Name of the consumer group.</param>
     /// <param name="memberName">Name of the member to step down.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    public static async Task MemberStepDownAsync(
-        INatsJSContext js,
+    public static async Task PcgStaticMemberStepDownAsync(
+        this INatsJSContext js,
         string streamName,
         string consumerGroupName,
         string memberName,
@@ -258,19 +258,19 @@ public static class NatsPCStatic
         var consumer = await js.GetConsumerAsync(streamName, consumerName, cancellationToken).ConfigureAwait(false);
 
         // Find the priority group for this member and unpin
-        await consumer.UnpinAsync(NatsPCConstants.PriorityGroupName, cancellationToken).ConfigureAwait(false);
+        await consumer.UnpinAsync(NatsPcgConstants.PriorityGroupName, cancellationToken).ConfigureAwait(false);
     }
 
-    private static void ValidateConfig(uint maxNumMembers, string[]? members, NatsPCMemberMapping[]? memberMappings)
+    private static void ValidateConfig(uint maxNumMembers, string[]? members, NatsPcgMemberMapping[]? memberMappings)
     {
         if (maxNumMembers == 0)
         {
-            throw new NatsPCConfigurationException("maxNumMembers must be greater than 0");
+            throw new NatsPcgConfigurationException("maxNumMembers must be greater than 0");
         }
 
         if (members != null && memberMappings != null)
         {
-            throw new NatsPCConfigurationException("Cannot specify both members and memberMappings");
+            throw new NatsPcgConfigurationException("Cannot specify both members and memberMappings");
         }
 
         if (memberMappings != null)
@@ -281,7 +281,7 @@ public static class NatsPCStatic
                 {
                     if (partition < 0 || partition >= maxNumMembers)
                     {
-                        throw new NatsPCConfigurationException($"Partition {partition} is out of range [0, {maxNumMembers})");
+                        throw new NatsPcgConfigurationException($"Partition {partition} is out of range [0, {maxNumMembers})");
                     }
                 }
             }
@@ -290,7 +290,7 @@ public static class NatsPCStatic
 
     private static async Task<INatsKVStore> GetOrCreateKvStoreAsync(INatsKVContext kv, CancellationToken cancellationToken)
     {
-        return await kv.CreateOrUpdateStoreAsync(new NatsKVConfig(NatsPCConstants.StaticKvBucket), cancellationToken).ConfigureAwait(false);
+        return await kv.CreateOrUpdateStoreAsync(new NatsKVConfig(NatsPcgConstants.StaticKvBucket), cancellationToken).ConfigureAwait(false);
     }
 
     internal static string GetKvKey(string streamName, string consumerGroupName)

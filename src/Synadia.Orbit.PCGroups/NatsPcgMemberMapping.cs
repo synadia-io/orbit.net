@@ -8,15 +8,15 @@ namespace Synadia.Orbit.PCGroups;
 /// <summary>
 /// Represents a mapping of a member to specific partitions.
 /// </summary>
-public sealed record NatsPCMemberMapping
+public sealed record NatsPcgMemberMapping
 {
     /// <summary>
-    /// Initializes a new instance of the <see cref="NatsPCMemberMapping"/> class.
+    /// Initializes a new instance of the <see cref="NatsPcgMemberMapping"/> class.
     /// </summary>
     /// <param name="member">The member name.</param>
     /// <param name="partitions">The partitions assigned to this member.</param>
     [JsonConstructor]
-    public NatsPCMemberMapping(string member, int[] partitions)
+    public NatsPcgMemberMapping(string member, int[] partitions)
     {
         Member = member;
         Partitions = partitions;

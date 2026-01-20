@@ -6,7 +6,7 @@ namespace Synadia.Orbit.PCGroups;
 /// <summary>
 /// Distributes partitions to members.
 /// </summary>
-public static class NatsPCPartitionDistributor
+public static class NatsPcgPartitionDistributor
 {
     /// <summary>
     /// Generates partition filters for a member.
@@ -19,7 +19,7 @@ public static class NatsPCPartitionDistributor
     public static string[] GeneratePartitionFilters(
         string[]? members,
         uint maxMembers,
-        NatsPCMemberMapping[]? memberMappings,
+        NatsPcgMemberMapping[]? memberMappings,
         string memberName)
     {
         int[] partitions;
@@ -30,7 +30,7 @@ public static class NatsPCPartitionDistributor
             var mapping = Array.Find(memberMappings, m => m.Member == memberName);
             if (mapping == null)
             {
-                throw new NatsPCMembershipException($"Member '{memberName}' not found in member mappings");
+                throw new NatsPcgMembershipException($"Member '{memberName}' not found in member mappings");
             }
 
             partitions = mapping.Partitions;
@@ -76,7 +76,7 @@ public static class NatsPCPartitionDistributor
         var memberIndex = Array.IndexOf(sortedMembers, memberName);
         if (memberIndex < 0)
         {
-            throw new NatsPCMembershipException($"Member '{memberName}' not found in members list");
+            throw new NatsPcgMembershipException($"Member '{memberName}' not found in members list");
         }
 
         var numMembers = sortedMembers.Length;
@@ -101,7 +101,7 @@ public static class NatsPCPartitionDistributor
     /// <param name="memberMappings">Optional explicit member-to-partition mappings.</param>
     /// <param name="memberName">The member name to check.</param>
     /// <returns>True if the member is in the membership.</returns>
-    public static bool IsInMembership(string[]? members, NatsPCMemberMapping[]? memberMappings, string memberName)
+    public static bool IsInMembership(string[]? members, NatsPcgMemberMapping[]? memberMappings, string memberName)
     {
         if (memberMappings != null && memberMappings.Length > 0)
         {

@@ -1,6 +1,7 @@
 // Copyright (c) Synadia Communications, Inc. All rights reserved.
 // Licensed under the Apache License, Version 2.0.
 
+// ReSharper disable SuggestVarOrType_BuiltInTypes
 using System.CommandLine;
 using System.CommandLine.Builder;
 using System.CommandLine.Parsing;
@@ -15,7 +16,7 @@ var serverOption = new Option<string>(
     getDefaultValue: () => "nats://localhost:4222",
     description: "NATS server URL");
 
-var rootCommand = new RootCommand("OrbitCG - NATS Partitioned Consumer Groups CLI")
+var rootCommand = new RootCommand("OrbitPcg - NATS Partitioned Consumer Groups CLI")
 {
     serverOption,
 };
@@ -38,7 +39,7 @@ staticListCommand.SetHandler(async (server, stream) =>
 
     Console.WriteLine($"Static consumer groups on stream '{stream}':");
     var count = 0;
-    await foreach (var group in NatsPCStatic.ListAsync(js, stream))
+    await foreach (var group in js.ListPcgStaticAsync(stream))
     {
         Console.WriteLine($"  - {group}");
         count++;
@@ -62,7 +63,7 @@ staticInfoCommand.SetHandler(async (server, stream, name) =>
     await using var nats = new NatsConnection(new NatsOpts { Url = server });
     var js = new NatsJSContext(nats);
 
-    var config = await NatsPCStatic.GetConfigAsync(js, stream, name);
+    var config = await js.GetPcgStaticConfigAsync(stream, name);
     Console.WriteLine($"Static Consumer Group: {name}");
     Console.WriteLine($"  Stream:      {stream}");
     Console.WriteLine($"  MaxMembers:  {config.MaxMembers}");
@@ -84,7 +85,7 @@ staticInfoCommand.SetHandler(async (server, stream, name) =>
 
     Console.WriteLine("\nActive Members:");
     var activeCount = 0;
-    await foreach (var member in NatsPCStatic.ListActiveMembersAsync(js, stream, name))
+    await foreach (var member in js.ListPcgStaticActiveMembersAsync(stream, name))
     {
         Console.WriteLine($"  - {member}");
         activeCount++;
@@ -116,14 +117,13 @@ staticCreateCommand.SetHandler(async (server, stream, name, maxMembers, filter, 
     await using var nats = new NatsConnection(new NatsOpts { Url = server });
     var js = new NatsJSContext(nats);
 
-    NatsPCMemberMapping[]? mappings = null;
-    if (mappingsStr != null && mappingsStr.Length > 0)
+    NatsPcgMemberMapping[]? mappings = null;
+    if (mappingsStr is { Length: > 0 })
     {
         mappings = ParseMappings(mappingsStr);
     }
 
-    var config = await NatsPCStatic.CreateAsync(
-        js, stream, name, maxMembers,
+    var config = await js.CreatePcgStaticAsync(stream, name, maxMembers,
         filter: filter,
         members: members,
         memberMappings: mappings);
@@ -161,7 +161,7 @@ staticDeleteCommand.SetHandler(async (server, stream, name, force) =>
     await using var nats = new NatsConnection(new NatsOpts { Url = server });
     var js = new NatsJSContext(nats);
 
-    await NatsPCStatic.DeleteAsync(js, stream, name);
+    await js.DeletePcgStaticAsync(stream, name);
     Console.WriteLine($"Deleted static consumer group '{name}'");
 }, serverOption, staticDeleteStreamArg, staticDeleteNameArg, staticDeleteForceOption);
 staticCommand.AddCommand(staticDeleteCommand);
@@ -180,7 +180,7 @@ staticStepDownCommand.SetHandler(async (server, stream, name, member) =>
     await using var nats = new NatsConnection(new NatsOpts { Url = server });
     var js = new NatsJSContext(nats);
 
-    await NatsPCStatic.MemberStepDownAsync(js, stream, name, member);
+    await js.PcgStaticMemberStepDownAsync(stream, name, member);
     Console.WriteLine($"Member '{member}' stepped down from group '{name}'");
 }, serverOption, staticStepDownStreamArg, staticStepDownNameArg, staticStepDownMemberArg);
 staticCommand.AddCommand(staticStepDownCommand);
@@ -203,7 +203,7 @@ elasticListCommand.SetHandler(async (server, stream) =>
 
     Console.WriteLine($"Elastic consumer groups on stream '{stream}':");
     var count = 0;
-    await foreach (var group in NatsPCElastic.ListAsync(js, stream))
+    await foreach (var group in js.ListPcgElasticAsync(stream))
     {
         Console.WriteLine($"  - {group}");
         count++;
@@ -227,7 +227,7 @@ elasticInfoCommand.SetHandler(async (server, stream, name) =>
     await using var nats = new NatsConnection(new NatsOpts { Url = server });
     var js = new NatsJSContext(nats);
 
-    var config = await NatsPCElastic.GetConfigAsync(js, stream, name);
+    var config = await js.GetPcgElasticConfigAsync(stream, name);
     Console.WriteLine($"Elastic Consumer Group: {name}");
     Console.WriteLine($"  Stream:                {stream}");
     Console.WriteLine($"  MaxMembers:            {config.MaxMembers}");
@@ -255,7 +255,7 @@ elasticInfoCommand.SetHandler(async (server, stream, name) =>
 
     Console.WriteLine("\nActive Members:");
     var activeCount = 0;
-    await foreach (var member in NatsPCElastic.ListActiveMembersAsync(js, stream, name))
+    await foreach (var member in js.ListPcgElasticActiveMembersAsync(stream, name))
     {
         Console.WriteLine($"  - {member}");
         activeCount++;
@@ -298,8 +298,7 @@ elasticCreateCommand.SetHandler(async context =>
     await using var nats = new NatsConnection(new NatsOpts { Url = server });
     var js = new NatsJSContext(nats);
 
-    var config = await NatsPCElastic.CreateAsync(
-        js, stream, name, maxMembers, filter, wildcards,
+    var config = await js.CreatePcgElasticAsync(stream, name, maxMembers, filter, wildcards,
         maxBufferedMessages: maxMsgs,
         maxBufferedBytes: maxBytes);
 
@@ -335,7 +334,7 @@ elasticDeleteCommand.SetHandler(async (server, stream, name, force) =>
     await using var nats = new NatsConnection(new NatsOpts { Url = server });
     var js = new NatsJSContext(nats);
 
-    await NatsPCElastic.DeleteAsync(js, stream, name);
+    await js.DeletePcgElasticAsync(stream, name);
     Console.WriteLine($"Deleted elastic consumer group '{name}'");
 }, serverOption, elasticDeleteStreamArg, elasticDeleteNameArg, elasticDeleteForceOption);
 elasticCommand.AddCommand(elasticDeleteCommand);
@@ -353,7 +352,7 @@ elasticAddCommand.SetHandler(async (server, stream, name, members) =>
     await using var nats = new NatsConnection(new NatsOpts { Url = server });
     var js = new NatsJSContext(nats);
 
-    var updatedMembers = await NatsPCElastic.AddMembersAsync(js, stream, name, members);
+    var updatedMembers = await js.AddPcgElasticMembersAsync(stream, name, members);
     Console.WriteLine($"Added members to '{name}'");
     Console.WriteLine($"Current members: {string.Join(", ", updatedMembers)}");
 }, serverOption, elasticAddStreamArg, elasticAddNameArg, elasticAddMembersArg);
@@ -372,7 +371,7 @@ elasticDropCommand.SetHandler(async (server, stream, name, members) =>
     await using var nats = new NatsConnection(new NatsOpts { Url = server });
     var js = new NatsJSContext(nats);
 
-    var updatedMembers = await NatsPCElastic.DeleteMembersAsync(js, stream, name, members);
+    var updatedMembers = await js.DeletePcgElasticMembersAsync(stream, name, members);
     Console.WriteLine($"Removed members from '{name}'");
     Console.WriteLine($"Current members: {(updatedMembers.Length > 0 ? string.Join(", ", updatedMembers) : "(none)")}");
 }, serverOption, elasticDropStreamArg, elasticDropNameArg, elasticDropMembersArg);
@@ -393,7 +392,7 @@ elasticSetMappingsCommand.SetHandler(async (server, stream, name, mappingsStr) =
     var js = new NatsJSContext(nats);
 
     var mappings = ParseMappings(mappingsStr);
-    await NatsPCElastic.SetMemberMappingsAsync(js, stream, name, mappings);
+    await js.SetPcgElasticMemberMappingsAsync(stream, name, mappings);
 
     Console.WriteLine($"Set mappings for '{name}':");
     foreach (var mapping in mappings)
@@ -415,7 +414,7 @@ elasticDeleteMappingsCommand.SetHandler(async (server, stream, name) =>
     await using var nats = new NatsConnection(new NatsOpts { Url = server });
     var js = new NatsJSContext(nats);
 
-    await NatsPCElastic.DeleteMemberMappingsAsync(js, stream, name);
+    await js.DeletePcgElasticMemberMappingsAsync(stream, name);
     Console.WriteLine($"Deleted mappings for '{name}'");
 }, serverOption, elasticDeleteMappingsStreamArg, elasticDeleteMappingsNameArg);
 elasticCommand.AddCommand(elasticDeleteMappingsCommand);
@@ -434,7 +433,7 @@ elasticStepDownCommand.SetHandler(async (server, stream, name, member) =>
     await using var nats = new NatsConnection(new NatsOpts { Url = server });
     var js = new NatsJSContext(nats);
 
-    await NatsPCElastic.MemberStepDownAsync(js, stream, name, member);
+    await js.PcgElasticMemberStepDownAsync(stream, name, member);
     Console.WriteLine($"Member '{member}' stepped down from group '{name}'");
 }, serverOption, elasticStepDownStreamArg, elasticStepDownNameArg, elasticStepDownMemberArg);
 elasticCommand.AddCommand(elasticStepDownCommand);
@@ -453,7 +452,7 @@ elasticMemberInfoCommand.SetHandler(async (server, stream, name, member) =>
     await using var nats = new NatsConnection(new NatsOpts { Url = server });
     var js = new NatsJSContext(nats);
 
-    var (isInMembership, isActive) = await NatsPCElastic.IsInMembershipAndActiveAsync(js, stream, name, member);
+    var (isInMembership, isActive) = await js.IsInPcgElasticMembershipAndActiveAsync(stream, name, member);
     Console.WriteLine($"Member: {member}");
     Console.WriteLine($"  In Membership: {isInMembership}");
     Console.WriteLine($"  Active:        {isActive}");
@@ -468,9 +467,9 @@ var parser = new CommandLineBuilder(rootCommand)
 return await parser.InvokeAsync(args);
 
 // Helper functions
-static NatsPCMemberMapping[] ParseMappings(string[] mappingsStr)
+static NatsPcgMemberMapping[] ParseMappings(string[] mappingsStr)
 {
-    var mappings = new List<NatsPCMemberMapping>();
+    var mappings = new List<NatsPcgMemberMapping>();
     foreach (var mappingStr in mappingsStr)
     {
         var parts = mappingStr.Split(':');
@@ -481,7 +480,7 @@ static NatsPCMemberMapping[] ParseMappings(string[] mappingsStr)
 
         var member = parts[0];
         var partitions = parts[1].Split(',').Select(p => int.Parse(p.Trim())).ToArray();
-        mappings.Add(new NatsPCMemberMapping(member, partitions));
+        mappings.Add(new NatsPcgMemberMapping(member, partitions));
     }
 
     return mappings.ToArray();

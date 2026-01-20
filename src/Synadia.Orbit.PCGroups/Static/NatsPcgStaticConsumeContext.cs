@@ -8,42 +8,39 @@ using NATS.Client.JetStream.Models;
 using NATS.Client.KeyValueStore;
 using NATS.Net;
 
-namespace Synadia.Orbit.PCGroups.Elastic;
+namespace Synadia.Orbit.PCGroups.Static;
 
 /// <summary>
-/// Consume context for an elastic partitioned consumer group.
+/// Consume context for a static partitioned consumer group.
 /// </summary>
 /// <typeparam name="T">Message data type.</typeparam>
-internal sealed class NatsPCElasticConsumeContext<T> : INatsPCConsumeContext
+internal sealed class NatsPcgStaticConsumeContext<T> : INatsPcgConsumeContext
 {
     private readonly INatsJSContext _js;
     private readonly string _streamName;
     private readonly string _consumerGroupName;
     private readonly string _memberName;
-    private readonly Func<NatsPCGroupMsg<T>, CancellationToken, ValueTask> _messageHandler;
+    private readonly Func<NatsPcgMsg<T>, CancellationToken, ValueTask> _messageHandler;
     private readonly INatsDeserialize<T>? _serializer;
     private readonly ConsumerConfig? _userConfig;
 
     private readonly CancellationTokenSource _cts = new();
     private readonly TaskCompletionSource<Exception?> _completionSource = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly string _pinId;
-    private readonly object _configLock = new();
 
-    private NatsPCElasticConfig _config;
+    private NatsPcgStaticConfig _config;
     private INatsJSConsumer? _consumer;
     private Task? _consumeTask;
     private Task? _watchTask;
     private volatile bool _stopped;
-    private volatile bool _needsRecreate;
-    private string[] _currentFilters = Array.Empty<string>();
 
-    public NatsPCElasticConsumeContext(
+    public NatsPcgStaticConsumeContext(
         INatsJSContext js,
         string streamName,
         string consumerGroupName,
         string memberName,
-        NatsPCElasticConfig config,
-        Func<NatsPCGroupMsg<T>, CancellationToken, ValueTask> messageHandler,
+        NatsPcgStaticConfig config,
+        Func<NatsPcgMsg<T>, CancellationToken, ValueTask> messageHandler,
         INatsDeserialize<T>? serializer,
         ConsumerConfig? userConfig)
     {
@@ -120,44 +117,38 @@ internal sealed class NatsPCElasticConsumeContext<T> : INatsPCConsumeContext
 
     private async Task CreateOrGetConsumerAsync(CancellationToken cancellationToken)
     {
-        NatsPCElasticConfig config;
-        lock (_configLock)
-        {
-            config = _config;
-        }
-
-        var filters = NatsPCPartitionDistributor.GeneratePartitionFilters(
-            config.Members,
-            config.MaxMembers,
-            config.MemberMappings,
+        var filters = NatsPcgPartitionDistributor.GeneratePartitionFilters(
+            _config.Members,
+            _config.MaxMembers,
+            _config.MemberMappings,
             _memberName);
 
-        _currentFilters = filters;
+        // Apply config filter to partition filters
+        var finalFilters = ApplyFilter(filters, _config.Filter);
 
-        var workQueueStreamName = NatsPCElastic.GetWorkQueueStreamName(_streamName, _consumerGroupName);
-        var consumerName = NatsPCElastic.GetConsumerName(_consumerGroupName);
+        var consumerName = NatsPcgStaticExtensions.GetConsumerName(_consumerGroupName);
 
         var consumerConfig = new ConsumerConfig(consumerName)
         {
             DurableName = consumerName,
             AckPolicy = _userConfig?.AckPolicy ?? ConsumerConfigAckPolicy.Explicit,
-            AckWait = _userConfig?.AckWait ?? NatsPCConstants.AckWait,
+            AckWait = _userConfig?.AckWait ?? NatsPcgConstants.AckWait,
             MaxDeliver = _userConfig?.MaxDeliver ?? -1,
-            FilterSubjects = filters,
-            PriorityGroups = new[] { NatsPCConstants.PriorityGroupName },
+            FilterSubjects = finalFilters,
+            PriorityGroups = new[] { NatsPcgConstants.PriorityGroupName },
             PriorityPolicy = ConsumerConfigPriorityPolicy.PinnedClient,
-            PinnedTTL = NatsPCConstants.ConsumerIdleTimeout,
-            InactiveThreshold = NatsPCConstants.ConsumerIdleTimeout,
+            PinnedTTL = NatsPcgConstants.ConsumerIdleTimeout,
+            InactiveThreshold = NatsPcgConstants.ConsumerIdleTimeout,
         };
 
         try
         {
-            _consumer = await _js.CreateOrUpdateConsumerAsync(workQueueStreamName, consumerConfig, cancellationToken).ConfigureAwait(false);
+            _consumer = await _js.CreateOrUpdateConsumerAsync(_streamName, consumerConfig, cancellationToken).ConfigureAwait(false);
         }
         catch (NatsJSApiException ex) when (ex.Error.Code == 400)
         {
             // Consumer might already exist with different filter - try to get it
-            _consumer = await _js.GetConsumerAsync(workQueueStreamName, consumerName, cancellationToken).ConfigureAwait(false);
+            _consumer = await _js.GetConsumerAsync(_streamName, consumerName, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -169,36 +160,6 @@ internal sealed class NatsPCElasticConsumeContext<T> : INatsPCConsumeContext
         {
             while (!_stopped && !_cts.Token.IsCancellationRequested)
             {
-                // Check if we need to recreate the consumer due to membership change
-                if (_needsRecreate)
-                {
-                    _needsRecreate = false;
-                    try
-                    {
-                        await RecreateConsumerAsync().ConfigureAwait(false);
-                    }
-                    catch (Exception)
-                    {
-                        if (_stopped || _cts.Token.IsCancellationRequested)
-                        {
-                            break;
-                        }
-
-                        // Backoff and retry
-                        var delay = GetBackoffDelay();
-                        try
-                        {
-                            await Task.Delay(delay, _cts.Token).ConfigureAwait(false);
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            break;
-                        }
-
-                        continue;
-                    }
-                }
-
                 try
                 {
                     await ConsumeMessagesAsync().ConfigureAwait(false);
@@ -209,11 +170,8 @@ internal sealed class NatsPCElasticConsumeContext<T> : INatsPCConsumeContext
                 }
                 catch (NatsJSApiException ex) when (ex.Error.Code == 404)
                 {
-                    // Consumer deleted - this is expected when membership changes
-                    if (!_stopped && !_cts.Token.IsCancellationRequested)
-                    {
-                        _needsRecreate = true;
-                    }
+                    // Consumer deleted - this is expected when config changes
+                    break;
                 }
                 catch (Exception ex)
                 {
@@ -248,55 +206,6 @@ internal sealed class NatsPCElasticConsumeContext<T> : INatsPCConsumeContext
         }
     }
 
-    private async Task RecreateConsumerAsync()
-    {
-        NatsPCElasticConfig config;
-        lock (_configLock)
-        {
-            config = _config;
-        }
-
-        // Check if still in membership
-        if (!config.IsInMembership(_memberName))
-        {
-            Stop();
-            return;
-        }
-
-        // Recalculate filters
-        var filters = NatsPCPartitionDistributor.GeneratePartitionFilters(
-            config.Members,
-            config.MaxMembers,
-            config.MemberMappings,
-            _memberName);
-
-        // Only recreate if filters changed
-        if (FiltersEqual(filters, _currentFilters))
-        {
-            return;
-        }
-
-        _currentFilters = filters;
-
-        var workQueueStreamName = NatsPCElastic.GetWorkQueueStreamName(_streamName, _consumerGroupName);
-        var consumerName = NatsPCElastic.GetConsumerName(_consumerGroupName);
-
-        var consumerConfig = new ConsumerConfig(consumerName)
-        {
-            DurableName = consumerName,
-            AckPolicy = _userConfig?.AckPolicy ?? ConsumerConfigAckPolicy.Explicit,
-            AckWait = _userConfig?.AckWait ?? NatsPCConstants.AckWait,
-            MaxDeliver = _userConfig?.MaxDeliver ?? -1,
-            FilterSubjects = filters,
-            PriorityGroups = new[] { NatsPCConstants.PriorityGroupName },
-            PriorityPolicy = ConsumerConfigPriorityPolicy.PinnedClient,
-            PinnedTTL = NatsPCConstants.ConsumerIdleTimeout,
-            InactiveThreshold = NatsPCConstants.ConsumerIdleTimeout,
-        };
-
-        _consumer = await _js.CreateOrUpdateConsumerAsync(workQueueStreamName, consumerConfig, _cts.Token).ConfigureAwait(false);
-    }
-
     private async Task ConsumeMessagesAsync()
     {
         if (_consumer == null)
@@ -306,14 +215,14 @@ internal sealed class NatsPCElasticConsumeContext<T> : INatsPCConsumeContext
 
         var priorityGroup = new NatsJSPriorityGroupOpts
         {
-            Group = NatsPCConstants.PriorityGroupName,
+            Group = NatsPcgConstants.PriorityGroupName,
         };
 
         var consumeOpts = new NatsJSConsumeOpts
         {
             MaxMsgs = 100,
-            Expires = NatsPCConstants.PullTimeout,
-            IdleHeartbeat = TimeSpan.FromMilliseconds(NatsPCConstants.PullTimeout.TotalMilliseconds / 2),
+            Expires = NatsPcgConstants.PullTimeout,
+            IdleHeartbeat = TimeSpan.FromMilliseconds(NatsPcgConstants.PullTimeout.TotalMilliseconds / 2),
             PriorityGroup = priorityGroup,
         };
 
@@ -324,15 +233,9 @@ internal sealed class NatsPCElasticConsumeContext<T> : INatsPCConsumeContext
                 break;
             }
 
-            // Check if we need to stop and recreate
-            if (_needsRecreate)
-            {
-                break;
-            }
-
             // Strip partition prefix from subject
-            var strippedSubject = NatsPCGroupMsg<T>.StripPartitionPrefix(msg.Subject);
-            var pcMsg = new NatsPCGroupMsg<T>((NatsJSMsg<T>)msg, strippedSubject);
+            var strippedSubject = NatsPcgMsg<T>.StripPartitionPrefix(msg.Subject);
+            var pcMsg = new NatsPcgMsg<T>((NatsJSMsg<T>)msg, strippedSubject);
 
             try
             {
@@ -358,15 +261,14 @@ internal sealed class NatsPCElasticConsumeContext<T> : INatsPCConsumeContext
                     INatsKVStore store;
                     try
                     {
-                        store = await kv.GetStoreAsync(NatsPCConstants.ElasticKvBucket, _cts.Token).ConfigureAwait(false);
+                        store = await kv.GetStoreAsync(NatsPcgConstants.StaticKvBucket, _cts.Token).ConfigureAwait(false);
                     }
                     catch (NatsJSApiException ex) when (ex.Error.Code == 404)
                     {
                         await Task.Delay(TimeSpan.FromSeconds(5), _cts.Token).ConfigureAwait(false);
                         continue;
                     }
-
-                    var key = NatsPCElastic.GetKvKey(_streamName, _consumerGroupName);
+                    var key = NatsPcgStaticExtensions.GetKvKey(_streamName, _consumerGroupName);
 
                     var watchOpts = new NatsKVWatchOpts
                     {
@@ -387,25 +289,19 @@ internal sealed class NatsPCElasticConsumeContext<T> : INatsPCConsumeContext
                             break;
                         }
 
-                        if (entry.Value != null)
+                        if (entry.Value != null && entry.Revision != _config.Revision)
                         {
-                            var newConfig = JsonSerializer.Deserialize(entry.Value, NatsPCJsonSerializerContext.Default.NatsPCElasticConfig);
-                            if (newConfig != null && entry.Revision != _config.Revision)
+                            var newConfig = JsonSerializer.Deserialize(entry.Value, NatsPcgJsonSerializerContext.Default.NatsPcgStaticConfig);
+                            if (newConfig != null)
                             {
-                                lock (_configLock)
-                                {
-                                    _config = newConfig with { Revision = entry.Revision };
-                                }
+                                _config = newConfig with { Revision = entry.Revision };
 
                                 // Check if we're still in membership
-                                if (!newConfig.IsInMembership(_memberName))
+                                if (!_config.IsInMembership(_memberName))
                                 {
                                     Stop();
                                     break;
                                 }
-
-                                // Signal that we need to check if consumer needs recreation
-                                _needsRecreate = true;
                             }
                         }
                     }
@@ -453,22 +349,22 @@ internal sealed class NatsPCElasticConsumeContext<T> : INatsPCConsumeContext
         return await _completionSource.Task.ConfigureAwait(false);
     }
 
-    private static bool FiltersEqual(string[] a, string[] b)
+    private static string[] ApplyFilter(string[] partitionFilters, string? filter)
     {
-        if (a.Length != b.Length)
+        if (string.IsNullOrEmpty(filter))
         {
-            return false;
+            return partitionFilters;
         }
 
-        for (int i = 0; i < a.Length; i++)
+        var result = new string[partitionFilters.Length];
+        for (int i = 0; i < partitionFilters.Length; i++)
         {
-            if (a[i] != b[i])
-            {
-                return false;
-            }
+            // Replace .> with .{filter}
+            var prefix = partitionFilters[i].Substring(0, partitionFilters[i].Length - 1); // Remove ">"
+            result[i] = $"{prefix}{filter}";
         }
 
-        return true;
+        return result;
     }
 
     private static readonly Random s_random = new();
@@ -480,8 +376,8 @@ internal sealed class NatsPCElasticConsumeContext<T> : INatsPCConsumeContext
         lock (s_random)
         {
             delayMs = s_random.Next(
-                (int)NatsPCConstants.MinReconnectDelay.TotalMilliseconds,
-                (int)NatsPCConstants.MaxReconnectDelay.TotalMilliseconds);
+                (int)NatsPcgConstants.MinReconnectDelay.TotalMilliseconds,
+                (int)NatsPcgConstants.MaxReconnectDelay.TotalMilliseconds);
         }
 
         return TimeSpan.FromMilliseconds(delayMs);

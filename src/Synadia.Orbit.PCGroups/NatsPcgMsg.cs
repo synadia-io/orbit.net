@@ -11,17 +11,17 @@ namespace Synadia.Orbit.PCGroups;
 /// Wraps <see cref="NatsJSMsg{T}"/> and provides a subject with the partition prefix stripped.
 /// </summary>
 /// <typeparam name="T">The type of the message data.</typeparam>
-public readonly struct NatsPCGroupMsg<T>
+public readonly struct NatsPcgMsg<T>
 {
     private readonly NatsJSMsg<T> _msg;
     private readonly string _subject;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="NatsPCGroupMsg{T}"/> struct.
+    /// Initializes a new instance of the <see cref="NatsPcgMsg{T}"/> struct.
     /// </summary>
     /// <param name="msg">The underlying JetStream message.</param>
     /// <param name="subject">The subject with partition prefix stripped.</param>
-    internal NatsPCGroupMsg(NatsJSMsg<T> msg, string subject)
+    internal NatsPcgMsg(NatsJSMsg<T> msg, string subject)
     {
         _msg = msg;
         _subject = subject;

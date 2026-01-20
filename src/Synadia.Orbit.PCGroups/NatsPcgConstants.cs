@@ -6,7 +6,7 @@ namespace Synadia.Orbit.PCGroups;
 /// <summary>
 /// Constants used by partitioned consumer groups.
 /// </summary>
-internal static class NatsPCConstants
+internal static class NatsPcgConstants
 {
     /// <summary>
     /// KV bucket name for static consumer group configurations.

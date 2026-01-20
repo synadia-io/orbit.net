@@ -29,7 +29,7 @@
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/DocsExamples/DocsExamples.csproj" />
-    <Project Path="tools/OrbitCG/OrbitCG.csproj" />
+    <Project Path="tools/OrbitPcg/OrbitPcg.csproj" />
     <Project Path="tools/OrbitPublish/OrbitPublish.csproj" />
   </Folder>
 </Solution>
