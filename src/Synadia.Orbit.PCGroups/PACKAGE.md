@@ -23,23 +23,36 @@ dotnet add package Synadia.Orbit.PCGroups
 
 ### Static Consumer Groups
 
-Static groups have a fixed membership that cannot change after creation.
+Static groups have a fixed membership that cannot change after creation. The stream must be configured with a subject transform to add partition prefixes.
 
 ```csharp
-using NATS.Client.Core;
+using NATS.Client.JetStream.Models;
 using NATS.Net;
-using Synadia.Orbit.PCGroups;
 using Synadia.Orbit.PCGroups.Static;
 
-await using var nats = new NatsConnection(new NatsOpts { Url = "nats://localhost:4222" });
+await using var nats = new NatsClient();
 var js = nats.CreateJetStreamContext();
+
+// Create the stream with subject transform for partitioning
+// The transform adds a partition prefix based on the wildcard token
+await js.CreateStreamAsync(new StreamConfig("orders", ["orders.*"])
+{
+    SubjectTransform = new SubjectTransform
+    {
+        Src = "orders.*",
+        Dest = "{{partition(3,1)}}.orders.{{wildcard(1)}}",
+    },
+});
 
 // Create a static consumer group with 3 partitions
 await js.CreatePcgStaticAsync(
     streamName: "orders",
     consumerGroupName: "order-processors",
     maxNumMembers: 3,
-    filter: "orders.>");
+    filter: "orders.*");
+
+// Publish messages - they get transformed to {partition}.orders.{id}
+await js.PublishAsync("orders.123", new Order("ORD-123", "CUST-1", 99.99m));
 
 // Start consuming using async enumerable
 await foreach (var msg in js.ConsumePcgStaticAsync<Order>(
@@ -47,23 +60,29 @@ await foreach (var msg in js.ConsumePcgStaticAsync<Order>(
     consumerGroupName: "order-processors",
     memberName: "worker-1"))
 {
-    Console.WriteLine($"Processing order: {msg.Subject}");
+    Console.WriteLine($"Processing order: {msg.Subject} - {msg.Data}");
     await msg.AckAsync();
 }
+
+record Order(string OrderId, string CustomerId, decimal Amount);
 ```
 
 ### Elastic Consumer Groups
 
-Elastic groups allow dynamic membership changes at runtime.
+Elastic groups allow dynamic membership changes at runtime. The library automatically creates a work-queue stream with the appropriate transforms.
 
 ```csharp
-using NATS.Client.Core;
+using System.Threading.Channels;
+using NATS.Client.JetStream.Models;
 using NATS.Net;
 using Synadia.Orbit.PCGroups;
 using Synadia.Orbit.PCGroups.Elastic;
 
-await using var nats = new NatsConnection(new NatsOpts { Url = "nats://localhost:4222" });
+await using var nats = new NatsClient();
 var js = nats.CreateJetStreamContext();
+
+// Create the source stream (no transform needed - elastic creates work-queue stream)
+await js.CreateStreamAsync(new StreamConfig("events", ["events.*"]));
 
 // Create an elastic consumer group
 // Partitioning is based on the first wildcard token in the subject
@@ -74,26 +93,45 @@ await js.CreatePcgElasticAsync(
     filter: "events.*",           // e.g., events.user123, events.user456
     partitioningWildcards: [1]);  // Partition by the first wildcard (user ID)
 
-// Add members dynamically
-await js.AddPcgElasticMembersAsync("events", "event-processors",
-    new[] { "worker-1", "worker-2", "worker-3" });
+// Add members dynamically - partitions will be distributed across them
+string[] members = ["worker-1", "worker-2", "worker-3"];
+await js.AddPcgElasticMembersAsync("events", "event-processors", members);
 
-// Start consuming using async enumerable with cancellation support
+// Publish some messages
+await js.PublishAsync("events.user123", new Event("EVT-1", "user123", "click"));
+
+// Use a channel to aggregate messages from multiple workers
+var channel = Channel.CreateUnbounded<(string Worker, NatsPcgMsg<Event> Msg)>();
 using var cts = new CancellationTokenSource();
 
-await foreach (var msg in js.ConsumePcgElasticAsync<Event>(
-    streamName: "events",
-    consumerGroupName: "event-processors",
-    memberName: "worker-1",
-    cancellationToken: cts.Token))
+// Start a consumer task for each worker
+var consumerTasks = members.Select(worker => Task.Run(async () =>
 {
-    Console.WriteLine($"Processing event: {msg.Data}");
+    try
+    {
+        await foreach (var msg in js.ConsumePcgElasticAsync<Event>(
+            streamName: "events",
+            consumerGroupName: "event-processors",
+            memberName: worker,
+            cancellationToken: cts.Token))
+        {
+            await channel.Writer.WriteAsync((worker, msg), cts.Token);
+        }
+    }
+    catch (OperationCanceledException)
+    {
+        // Expected when cancelled
+    }
+})).ToArray();
+
+// Process messages from all workers
+await foreach (var (worker, msg) in channel.Reader.ReadAllAsync(cts.Token))
+{
+    Console.WriteLine($"[{worker}] Processing event: {msg.Subject} - {msg.Data}");
     await msg.AckAsync();
 }
 
-// Membership can be modified at runtime (from another task/process)
-// await js.AddPcgElasticMembersAsync("events", "event-processors", new[] { "worker-4" });
-// await js.DeletePcgElasticMembersAsync("events", "event-processors", new[] { "worker-2" });
+record Event(string EventId, string UserId, string Type);
 ```
 
 ## Static vs Elastic Comparison
@@ -102,14 +140,23 @@ await foreach (var msg in js.ConsumePcgElasticAsync<Event>(
 |---------|--------|---------|
 | Membership | Fixed at creation | Dynamic at runtime |
 | Use Case | Stable workloads | Scaling workloads |
-| Stream Type | Original stream | Work-queue stream (auto-created) |
-| Configuration | Simple | More complex |
+| Stream Setup | Requires SubjectTransform | Auto-creates work-queue stream |
+| Configuration | Simpler | More flexible |
 
 ## Custom Partition Mappings
 
 For fine-grained control over partition distribution:
 
 ```csharp
+using NATS.Client.JetStream.Models;
+using NATS.Net;
+using Synadia.Orbit.PCGroups;
+using Synadia.Orbit.PCGroups.Static;
+using Synadia.Orbit.PCGroups.Elastic;
+
+await using var nats = new NatsClient();
+var js = nats.CreateJetStreamContext();
+
 // Define explicit member-to-partition mappings
 var mappings = new[]
 {
@@ -117,12 +164,36 @@ var mappings = new[]
     new NatsPcgMemberMapping("low-priority-worker", [3, 4, 5]),
 };
 
-await js.CreatePcgStaticAsync("orders", "processors", maxNumMembers: 6,
-    memberMappings: mappings);
+// For static groups - stream needs subject transform
+await js.CreateStreamAsync(new StreamConfig("orders", ["orders.*"])
+{
+    SubjectTransform = new SubjectTransform
+    {
+        Src = "orders.*",
+        Dest = "{{partition(6,1)}}.orders.{{wildcard(1)}}",
+    },
+});
 
-// For elastic groups
+await js.CreatePcgStaticAsync("orders", "processors", maxNumMembers: 6,
+    filter: "orders.*", memberMappings: mappings);
+
+// For elastic groups - no transform needed on source stream
+await js.CreateStreamAsync(new StreamConfig("events", ["events.*"]));
+
+await js.CreatePcgElasticAsync("events", "processors", maxNumMembers: 6,
+    filter: "events.*", partitioningWildcards: [1]);
 await js.SetPcgElasticMemberMappingsAsync("events", "processors", mappings);
 ```
+
+## Subject Transform Syntax
+
+For static consumer groups, the stream must use subject transforms to add partition prefixes:
+
+- `{{partition(N,wildcards)}}` - Computes partition (0 to N-1) based on specified wildcard positions
+- `{{wildcard(N)}}` - References the Nth wildcard token from the source subject (1-indexed)
+
+Example: For `orders.*` with transform `{{partition(3,1)}}.orders.{{wildcard(1)}}`:
+- `orders.ABC` becomes `0.orders.ABC`, `1.orders.ABC`, or `2.orders.ABC` (based on hash of "ABC")
 
 ## API Reference
 
@@ -151,6 +222,11 @@ await js.SetPcgElasticMemberMappingsAsync("events", "processors", mappings);
 - `IsInPcgElasticMembershipAndActiveAsync` - Check if a member is in the group and active
 - `GetPcgElasticPartitionFilters` - Get partition filters for a member (extension on `NatsPcgElasticConfig`)
 - `PcgElasticMemberStepDownAsync` - Force a member to step down
+
+### Validation (Static class `NatsPcgMemberMappingValidator`)
+
+- `Validate` - Validate member mappings (checks for duplicates, overlaps, out-of-range partitions)
+- `ValidateFilterAndWildcards` - Validate filter and partitioning wildcards for elastic groups
 
 ## How It Works
 
