@@ -2,13 +2,14 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System.Runtime.CompilerServices;
-using System.Text.Json;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
 using NATS.Client.KeyValueStore;
 using NATS.Net;
 
+// ReSharper disable InvokeAsExtensionMember
+// ReSharper disable ConvertToExtensionBlock
 namespace Synadia.Orbit.PCGroups.Elastic;
 
 /// <summary>
@@ -59,10 +60,9 @@ public static class NatsPcgElasticExtensions
         var kv = js.Connection.CreateKeyValueStoreContext();
         var store = await GetOrCreateKvStoreAsync(kv, cancellationToken).ConfigureAwait(false);
 
-        var key = GetKvKey(streamName, consumerGroupName);
-        var json = JsonSerializer.Serialize(config, NatsPcgJsonSerializerContext.Default.NatsPcgElasticConfig);
+        string key = GetKvKey(streamName, consumerGroupName);
 
-        var revision = await store.CreateAsync(key, json, cancellationToken: cancellationToken).ConfigureAwait(false);
+        ulong revision = await store.CreateAsync(key, config, serializer: NatsPcgJsonSerializer<NatsPcgElasticConfig>.Default, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         return config with { Revision = revision };
     }
@@ -84,7 +84,7 @@ public static class NatsPcgElasticExtensions
         var kv = js.Connection.CreateKeyValueStoreContext();
         var store = await kv.GetStoreAsync(NatsPcgConstants.ElasticKvBucket, cancellationToken).ConfigureAwait(false);
 
-        var key = GetKvKey(streamName, consumerGroupName);
+        string key = GetKvKey(streamName, consumerGroupName);
         var entry = await store.GetEntryAsync(key, serializer: NatsPcgJsonSerializer<NatsPcgElasticConfig>.Default, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         if (entry.Value == null)
@@ -171,7 +171,7 @@ public static class NatsPcgElasticExtensions
         try
         {
             var store = await kv.GetStoreAsync(NatsPcgConstants.ElasticKvBucket, cancellationToken).ConfigureAwait(false);
-            var key = GetKvKey(streamName, consumerGroupName);
+            string key = GetKvKey(streamName, consumerGroupName);
             await store.DeleteAsync(key, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
         catch (NatsJSApiException ex) when (ex.Error.Code == 404)
@@ -180,7 +180,7 @@ public static class NatsPcgElasticExtensions
         }
 
         // Delete work-queue stream
-        var workQueueStreamName = GetWorkQueueStreamName(streamName, consumerGroupName);
+        string workQueueStreamName = GetWorkQueueStreamName(streamName, consumerGroupName);
         try
         {
             await js.DeleteStreamAsync(workQueueStreamName, cancellationToken).ConfigureAwait(false);
@@ -215,9 +215,9 @@ public static class NatsPcgElasticExtensions
             yield break;
         }
 
-        var prefix = $"{streamName}.";
+        string prefix = $"{streamName}.";
 
-        await foreach (var key in store.GetKeysAsync(cancellationToken: cancellationToken).ConfigureAwait(false))
+        await foreach (string? key in store.GetKeysAsync(cancellationToken: cancellationToken).ConfigureAwait(false))
         {
             if (key.StartsWith(prefix, StringComparison.Ordinal))
             {
@@ -240,8 +240,8 @@ public static class NatsPcgElasticExtensions
         string consumerGroupName,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var workQueueStreamName = GetWorkQueueStreamName(streamName, consumerGroupName);
-        var consumerName = GetConsumerName(consumerGroupName);
+        string workQueueStreamName = GetWorkQueueStreamName(streamName, consumerGroupName);
+        string consumerName = GetConsumerName(consumerGroupName);
 
         ConsumerInfo info;
         try
@@ -262,7 +262,7 @@ public static class NatsPcgElasticExtensions
                 {
                     // The member name is embedded in the pinned client ID
                     // Format: {member}-{guid}
-                    var dashIndex = group.PinnedClientId.LastIndexOf('-');
+                    int dashIndex = group.PinnedClientId.LastIndexOf('-');
                     if (dashIndex > 0)
                     {
                         yield return group.PinnedClientId.Substring(0, dashIndex);
@@ -327,7 +327,7 @@ public static class NatsPcgElasticExtensions
     {
         var kv = js.Connection.CreateKeyValueStoreContext();
         var store = await kv.GetStoreAsync(NatsPcgConstants.ElasticKvBucket, cancellationToken).ConfigureAwait(false);
-        var key = GetKvKey(streamName, consumerGroupName);
+        string key = GetKvKey(streamName, consumerGroupName);
 
         // Retry loop for optimistic concurrency
         const int maxRetries = 5;
@@ -341,17 +341,8 @@ public static class NatsPcgElasticExtensions
 
             var config = entry.Value;
 
-            // Validate mappings
-            foreach (var mapping in memberMappings)
-            {
-                foreach (var partition in mapping.Partitions)
-                {
-                    if (partition < 0 || partition >= config.MaxMembers)
-                    {
-                        throw new NatsPcgConfigurationException($"Partition {partition} is out of range [0, {config.MaxMembers})");
-                    }
-                }
-            }
+            // Validate mappings - elastic groups require all partitions to be covered
+            NatsPcgMemberMappingValidator.Validate(memberMappings, config.MaxMembers, requireAllPartitions: true);
 
             var updatedConfig = config with
             {
@@ -359,11 +350,9 @@ public static class NatsPcgElasticExtensions
                 MemberMappings = memberMappings,
             };
 
-            var json = JsonSerializer.Serialize(updatedConfig, NatsPcgJsonSerializerContext.Default.NatsPcgElasticConfig);
-
             try
             {
-                await store.UpdateAsync(key, json, entry.Revision, cancellationToken: cancellationToken).ConfigureAwait(false);
+                await store.UpdateAsync(key, updatedConfig, entry.Revision, serializer: NatsPcgJsonSerializer<NatsPcgElasticConfig>.Default, cancellationToken: cancellationToken).ConfigureAwait(false);
                 return;
             }
             catch (NatsKVWrongLastRevisionException)
@@ -407,11 +396,10 @@ public static class NatsPcgElasticExtensions
             }
 
             var updatedConfig = entry.Value with { MemberMappings = null };
-            var json = JsonSerializer.Serialize(updatedConfig, NatsPcgJsonSerializerContext.Default.NatsPcgElasticConfig);
 
             try
             {
-                await store.UpdateAsync(key, json, entry.Revision, cancellationToken: cancellationToken).ConfigureAwait(false);
+                await store.UpdateAsync(key, updatedConfig, entry.Revision, serializer: NatsPcgJsonSerializer<NatsPcgElasticConfig>.Default, cancellationToken: cancellationToken).ConfigureAwait(false);
                 return;
             }
             catch (NatsKVWrongLastRevisionException)
@@ -502,31 +490,16 @@ public static class NatsPcgElasticExtensions
         await consumer.UnpinAsync(NatsPcgConstants.PriorityGroupName, cancellationToken).ConfigureAwait(false);
     }
 
+    // ReSharper disable ParameterOnlyUsedForPreconditionCheck.Local
     private static void ValidateConfig(uint maxNumMembers, string filter, int[] partitioningWildcards)
     {
+        // ReSharper restore ParameterOnlyUsedForPreconditionCheck.Local
         if (maxNumMembers == 0)
         {
             throw new NatsPcgConfigurationException("maxNumMembers must be greater than 0");
         }
 
-        if (string.IsNullOrEmpty(filter))
-        {
-            throw new NatsPcgConfigurationException("filter is required for elastic consumer groups");
-        }
-
-        if (partitioningWildcards == null || partitioningWildcards.Length == 0)
-        {
-            throw new NatsPcgConfigurationException("partitioningWildcards must contain at least one element");
-        }
-
-        // Validate wildcard positions are valid (1-indexed)
-        foreach (var pos in partitioningWildcards)
-        {
-            if (pos < 1)
-            {
-                throw new NatsPcgConfigurationException($"Wildcard position {pos} is invalid (must be >= 1)");
-            }
-        }
+        NatsPcgMemberMappingValidator.ValidateFilterAndWildcards(filter, partitioningWildcards);
     }
 
     private static async Task CreateWorkQueueStreamAsync(
@@ -536,12 +509,25 @@ public static class NatsPcgElasticExtensions
         NatsPcgElasticConfig config,
         CancellationToken cancellationToken)
     {
-        var workQueueStreamName = GetWorkQueueStreamName(streamName, consumerGroupName);
+        string workQueueStreamName = GetWorkQueueStreamName(streamName, consumerGroupName);
 
         // Build subject transform: add partition prefix based on wildcards
         // Transform syntax: {{Partition(numPartitions, wildcardIndexes...)}}
-        var wildcardStr = string.Join(",", config.PartitioningWildcards);
-        var subjectTransform = $"{{{{Partition({config.MaxMembers},{wildcardStr})}}}}.${{subject}}";
+        // Replace * wildcards with {{wildcard(N)}} in the filter
+        string wildcardStr = string.Join(",", config.PartitioningWildcards);
+        var filterTokens = config.Filter.Split('.');
+        int wildcardIndex = 1;
+        for (int i = 0; i < filterTokens.Length; i++)
+        {
+            if (filterTokens[i] == "*")
+            {
+                filterTokens[i] = $"{{{{wildcard({wildcardIndex})}}}}";
+                wildcardIndex++;
+            }
+        }
+
+        string destFromFilter = string.Join(".", filterTokens);
+        string subjectTransform = $"{{{{Partition({config.MaxMembers},{wildcardStr})}}}}.{destFromFilter}";
 
         var sources = new List<StreamSource>
         {
@@ -589,7 +575,7 @@ public static class NatsPcgElasticExtensions
     {
         var kv = js.Connection.CreateKeyValueStoreContext();
         var store = await kv.GetStoreAsync(NatsPcgConstants.ElasticKvBucket, cancellationToken).ConfigureAwait(false);
-        var key = GetKvKey(streamName, consumerGroupName);
+        string key = GetKvKey(streamName, consumerGroupName);
 
         // Retry loop for optimistic concurrency
         const int maxRetries = 5;
@@ -614,26 +600,25 @@ public static class NatsPcgElasticExtensions
 
             if (add)
             {
-                foreach (var member in memberNames)
+                foreach (string member in memberNames)
                 {
                     currentMembers.Add(member);
                 }
             }
             else
             {
-                foreach (var member in memberNames)
+                foreach (string member in memberNames)
                 {
                     currentMembers.Remove(member);
                 }
             }
 
-            var updatedMembers = currentMembers.Count > 0 ? currentMembers.ToArray() : null;
+            string[]? updatedMembers = currentMembers.Count > 0 ? currentMembers.ToArray() : null;
             var updatedConfig = config with { Members = updatedMembers };
-            var json = JsonSerializer.Serialize(updatedConfig, NatsPcgJsonSerializerContext.Default.NatsPcgElasticConfig);
 
             try
             {
-                await store.UpdateAsync(key, json, entry.Revision, cancellationToken: cancellationToken).ConfigureAwait(false);
+                await store.UpdateAsync(key, updatedConfig, entry.Revision, serializer: NatsPcgJsonSerializer<NatsPcgElasticConfig>.Default, cancellationToken: cancellationToken).ConfigureAwait(false);
                 return updatedMembers ?? Array.Empty<string>();
             }
             catch (NatsKVWrongLastRevisionException)

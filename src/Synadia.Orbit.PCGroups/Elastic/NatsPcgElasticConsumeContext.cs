@@ -119,7 +119,7 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
                 }
             }
 
-            IAsyncEnumerable<INatsJSMsg<T>>? messages = null;
+            IAsyncEnumerable<INatsJSMsg<T>>? messages;
 
             try
             {
@@ -159,7 +159,7 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
                 yield break;
             }
 
-            if (messages != null)
+            if (messages != null!)
             {
                 IAsyncEnumerator<INatsJSMsg<T>>? enumerator = null;
                 try
@@ -204,7 +204,7 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
                         }
 
                         var msg = enumerator.Current;
-                        var strippedSubject = NatsPcgMsg<T>.StripPartitionPrefix(msg.Subject);
+                        string strippedSubject = NatsPcgMsg<T>.StripPartitionPrefix(msg.Subject);
                         yield return new NatsPcgMsg<T>((NatsJSMsg<T>)msg, strippedSubject);
                     }
                 }
@@ -227,7 +227,7 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
             config = _config;
         }
 
-        var filters = NatsPcgPartitionDistributor.GeneratePartitionFilters(
+        string[] filters = NatsPcgPartitionDistributor.GeneratePartitionFilters(
             config.Members,
             config.MaxMembers,
             config.MemberMappings,
@@ -235,12 +235,13 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
 
         _currentFilters = filters;
 
-        var workQueueStreamName = NatsPcgElasticExtensions.GetWorkQueueStreamName(_streamName, _consumerGroupName);
-        var consumerName = NatsPcgElasticExtensions.GetConsumerName(_consumerGroupName);
+        string workQueueStreamName = NatsPcgElasticExtensions.GetWorkQueueStreamName(_streamName, _consumerGroupName);
+
+        // Each member gets its own consumer (named after the member)
+        string consumerName = _memberName;
 
         var consumerConfig = new ConsumerConfig(consumerName)
         {
-            DurableName = consumerName,
             AckPolicy = _userConfig?.AckPolicy ?? ConsumerConfigAckPolicy.Explicit,
             AckWait = _userConfig?.AckWait ?? NatsPcgConstants.AckWait,
             MaxDeliver = _userConfig?.MaxDeliver ?? -1,
@@ -279,7 +280,7 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
         }
 
         // Recalculate filters
-        var filters = NatsPcgPartitionDistributor.GeneratePartitionFilters(
+        string[] filters = NatsPcgPartitionDistributor.GeneratePartitionFilters(
             config.Members,
             config.MaxMembers,
             config.MemberMappings,
@@ -293,12 +294,13 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
 
         _currentFilters = filters;
 
-        var workQueueStreamName = NatsPcgElasticExtensions.GetWorkQueueStreamName(_streamName, _consumerGroupName);
-        var consumerName = NatsPcgElasticExtensions.GetConsumerName(_consumerGroupName);
+        string workQueueStreamName = NatsPcgElasticExtensions.GetWorkQueueStreamName(_streamName, _consumerGroupName);
+
+        // Each member gets its own consumer (named after the member)
+        string consumerName = _memberName;
 
         var consumerConfig = new ConsumerConfig(consumerName)
         {
-            DurableName = consumerName,
             AckPolicy = _userConfig?.AckPolicy ?? ConsumerConfigAckPolicy.Explicit,
             AckWait = _userConfig?.AckWait ?? NatsPcgConstants.AckWait,
             MaxDeliver = _userConfig?.MaxDeliver ?? -1,
@@ -333,7 +335,7 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
                         continue;
                     }
 
-                    var key = NatsPcgElasticExtensions.GetKvKey(_streamName, _consumerGroupName);
+                    string key = NatsPcgElasticExtensions.GetKvKey(_streamName, _consumerGroupName);
 
                     var watchOpts = new NatsKVWatchOpts
                     {
@@ -421,6 +423,7 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
         return true;
     }
 
+    // ReSharper disable once StaticMemberInGenericType
     private static readonly Random s_random = new();
 
     private static TimeSpan GetBackoffDelay()

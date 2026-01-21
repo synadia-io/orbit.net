@@ -2,7 +2,6 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System.Runtime.CompilerServices;
-using System.Text.Json;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
@@ -13,7 +12,7 @@ namespace Synadia.Orbit.PCGroups.Static;
 
 /// <summary>
 /// Static partitioned consumer group operations.
-/// Static groups have a fixed membership that is defined at creation time.
+/// Static groups have a fixed membership defined at creation time.
 /// </summary>
 public static class NatsPcgStaticExtensions
 {
@@ -53,9 +52,8 @@ public static class NatsPcgStaticExtensions
         };
 
         var key = GetKvKey(streamName, consumerGroupName);
-        var json = JsonSerializer.Serialize(config, NatsPcgJsonSerializerContext.Default.NatsPcgStaticConfig);
 
-        var revision = await store.CreateAsync(key, json, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var revision = await store.CreateAsync(key, config, serializer: NatsPcgJsonSerializer<NatsPcgStaticConfig>.Default, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         return config with { Revision = revision };
     }
@@ -276,19 +274,8 @@ public static class NatsPcgStaticExtensions
             throw new NatsPcgConfigurationException("Cannot specify both members and memberMappings");
         }
 
-        if (memberMappings != null)
-        {
-            foreach (var mapping in memberMappings)
-            {
-                foreach (var partition in mapping.Partitions)
-                {
-                    if (partition < 0 || partition >= maxNumMembers)
-                    {
-                        throw new NatsPcgConfigurationException($"Partition {partition} is out of range [0, {maxNumMembers})");
-                    }
-                }
-            }
-        }
+        // Static groups don't require all partitions to be covered (members can join/leave)
+        NatsPcgMemberMappingValidator.Validate(memberMappings, maxNumMembers, requireAllPartitions: false);
     }
 
     private static async Task<INatsKVStore> GetOrCreateKvStoreAsync(INatsKVContext kv, CancellationToken cancellationToken)

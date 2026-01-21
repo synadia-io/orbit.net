@@ -24,7 +24,7 @@ public static class NatsPcgPartitionDistributor
     {
         int[] partitions;
 
-        if (memberMappings != null && memberMappings.Length > 0)
+        if (memberMappings is { Length: > 0 })
         {
             // Use explicit mapping
             var mapping = Array.Find(memberMappings, m => m.Member == memberName);
@@ -35,7 +35,7 @@ public static class NatsPcgPartitionDistributor
 
             partitions = mapping.Partitions;
         }
-        else if (members != null && members.Length > 0)
+        else if (members is { Length: > 0 })
         {
             // Auto-distribute partitions based on member position
             partitions = DistributePartitions(members, maxMembers, memberName);
@@ -51,7 +51,7 @@ public static class NatsPcgPartitionDistributor
         }
 
         // Convert partition numbers to filters
-        var filters = new string[partitions.Length];
+        string[] filters = new string[partitions.Length];
         for (int i = 0; i < partitions.Length; i++)
         {
             filters[i] = $"{partitions[i]}.>";
@@ -70,19 +70,19 @@ public static class NatsPcgPartitionDistributor
     private static int[] DistributePartitions(string[] members, uint maxMembers, string memberName)
     {
         // Sort members to ensure consistent distribution
-        var sortedMembers = (string[])members.Clone();
+        string[] sortedMembers = (string[])members.Clone();
         Array.Sort(sortedMembers, StringComparer.Ordinal);
 
-        var memberIndex = Array.IndexOf(sortedMembers, memberName);
+        int memberIndex = Array.IndexOf(sortedMembers, memberName);
         if (memberIndex < 0)
         {
             throw new NatsPcgMembershipException($"Member '{memberName}' not found in members list");
         }
 
-        var numMembers = sortedMembers.Length;
+        int numMembers = sortedMembers.Length;
         var partitions = new List<int>();
 
-        // Distribute partitions: member at index i gets partitions where partition % numMembers == i
+        // Distribute partitions: member at index 'i' gets partitions where partition % numMembers == i
         for (int partition = 0; partition < maxMembers; partition++)
         {
             if (partition % numMembers == memberIndex)
@@ -103,12 +103,12 @@ public static class NatsPcgPartitionDistributor
     /// <returns>True if the member is in the membership.</returns>
     public static bool IsInMembership(string[]? members, NatsPcgMemberMapping[]? memberMappings, string memberName)
     {
-        if (memberMappings != null && memberMappings.Length > 0)
+        if (memberMappings is { Length: > 0 })
         {
             return Array.Exists(memberMappings, m => m.Member == memberName);
         }
 
-        if (members != null && members.Length > 0)
+        if (members is { Length: > 0 })
         {
             return Array.Exists(members, m => m == memberName);
         }

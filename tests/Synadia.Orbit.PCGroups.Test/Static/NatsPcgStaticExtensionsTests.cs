@@ -261,4 +261,162 @@ public class NatsPcgStaticExtensionsTests
 
         Assert.Contains("must be greater than 0", exception.Message);
     }
+
+    [Fact]
+    public async Task ConsumeStatic_ReceivesAllMessages()
+    {
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
+        var js = nats.CreateJetStreamContext();
+
+        var streamName = $"test-stream-{Guid.NewGuid():N}";
+
+        // Create stream with subject transform for partitioning
+        // Messages published to "orders.*" get transformed to "{partition}.orders.{wildcard}"
+        await js.CreateStreamAsync(new StreamConfig
+        {
+            Name = streamName,
+            Subjects = ["orders.*"],
+            SubjectTransform = new SubjectTransform
+            {
+                Src = "orders.*",
+                Dest = "{{partition(2,1)}}.orders.{{wildcard(1)}}",
+            },
+        });
+
+        try
+        {
+            var groupName = $"test-group-{Guid.NewGuid():N}";
+
+            // Create static consumer group with 2 partitions and 2 members
+            await js.CreatePcgStaticAsync(
+                streamName,
+                groupName,
+                maxNumMembers: 2,
+                filter: "orders.*",
+                members: ["m1", "m2"]);
+
+            // Publish test messages
+            const int messageCount = 10;
+            for (int i = 0; i < messageCount; i++)
+            {
+                await js.PublishAsync($"orders.{i}", $"payload-{i}");
+            }
+
+            // Consume with both members concurrently
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var receivedMessages = new System.Collections.Concurrent.ConcurrentBag<string>();
+
+            var consumer1Task = Task.Run(async () =>
+            {
+                await foreach (var msg in js.ConsumePcgStaticAsync<string>(streamName, groupName, "m1", cancellationToken: cts.Token))
+                {
+                    receivedMessages.Add($"m1:{msg.Subject}");
+                    await msg.AckAsync();
+                    if (receivedMessages.Count >= messageCount)
+                    {
+                        break;
+                    }
+                }
+            });
+
+            var consumer2Task = Task.Run(async () =>
+            {
+                await foreach (var msg in js.ConsumePcgStaticAsync<string>(streamName, groupName, "m2", cancellationToken: cts.Token))
+                {
+                    receivedMessages.Add($"m2:{msg.Subject}");
+                    await msg.AckAsync();
+                    if (receivedMessages.Count >= messageCount)
+                    {
+                        break;
+                    }
+                }
+            });
+
+            // Wait for all messages or timeout
+            while (receivedMessages.Count < messageCount && !cts.Token.IsCancellationRequested)
+            {
+                await Task.Delay(100, cts.Token);
+            }
+
+            cts.Cancel();
+
+            try
+            {
+                await Task.WhenAll(consumer1Task, consumer2Task);
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected
+            }
+
+            // Verify all messages received
+            Assert.Equal(messageCount, receivedMessages.Count);
+
+            // Verify messages were distributed (both members should have received some)
+            var m1Count = receivedMessages.Count(m => m.StartsWith("m1:"));
+            var m2Count = receivedMessages.Count(m => m.StartsWith("m2:"));
+            Assert.True(m1Count > 0, "m1 should have received some messages");
+            Assert.True(m2Count > 0, "m2 should have received some messages");
+
+            await js.DeletePcgStaticAsync(streamName, groupName);
+        }
+        finally
+        {
+            await js.DeleteStreamAsync(streamName);
+        }
+    }
+
+    [Fact]
+    public async Task ConsumeStatic_StripsPartitionPrefix()
+    {
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
+        var js = nats.CreateJetStreamContext();
+
+        var streamName = $"test-stream-{Guid.NewGuid():N}";
+
+        // Create stream with subject transform
+        await js.CreateStreamAsync(new StreamConfig
+        {
+            Name = streamName,
+            Subjects = ["test.*"],
+            SubjectTransform = new SubjectTransform
+            {
+                Src = "test.*",
+                Dest = "{{partition(1,1)}}.test.{{wildcard(1)}}",
+            },
+        });
+
+        try
+        {
+            var groupName = $"test-group-{Guid.NewGuid():N}";
+
+            // Create static consumer group with single member (gets all partitions)
+            await js.CreatePcgStaticAsync(
+                streamName,
+                groupName,
+                maxNumMembers: 1,
+                filter: "test.*",
+                members: ["worker"]);
+
+            // Publish a message
+            await js.PublishAsync("test.mykey", "payload");
+
+            // Consume and verify subject is stripped
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+            await foreach (var msg in js.ConsumePcgStaticAsync<string>(streamName, groupName, "worker", cancellationToken: cts.Token))
+            {
+                // Subject should be "test.mykey", not "0.test.mykey"
+                Assert.Equal("test.mykey", msg.Subject);
+                await msg.AckAsync();
+                break;
+            }
+
+            await js.DeletePcgStaticAsync(streamName, groupName);
+        }
+        finally
+        {
+            await js.DeleteStreamAsync(streamName);
+        }
+    }
 }

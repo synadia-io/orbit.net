@@ -179,11 +179,11 @@ internal sealed class NatsPcgStaticConsumeContext<T> : IAsyncEnumerable<NatsPcgM
         // Apply config filter to partition filters
         var finalFilters = ApplyFilter(filters, _config.Filter);
 
-        var consumerName = NatsPcgStaticExtensions.GetConsumerName(_consumerGroupName);
+        // Each member gets its own consumer (named after consumer group + member)
+        var consumerName = $"{_consumerGroupName}-{_memberName}";
 
         var consumerConfig = new ConsumerConfig(consumerName)
         {
-            DurableName = consumerName,
             AckPolicy = _userConfig?.AckPolicy ?? ConsumerConfigAckPolicy.Explicit,
             AckWait = _userConfig?.AckWait ?? NatsPcgConstants.AckWait,
             MaxDeliver = _userConfig?.MaxDeliver ?? -1,
