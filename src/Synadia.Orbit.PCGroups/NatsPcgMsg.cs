@@ -105,6 +105,19 @@ public readonly struct NatsPcgMsg<T>
         => _msg.AckTerminateAsync(opts, cancellationToken);
 
     /// <summary>
+    /// Acknowledges the message and waits for confirmation from the server.
+    /// This is also known as a "double ack" - the server will acknowledge receipt of your acknowledgment.
+    /// </summary>
+    /// <param name="cancellationToken">A <see cref="CancellationToken"/> used to cancel the call.</param>
+    /// <returns>A <see cref="ValueTask"/> representing the async call.</returns>
+    /// <remarks>
+    /// Use this method when you need guaranteed confirmation that the server has processed your acknowledgment.
+    /// This is useful for exactly-once processing scenarios.
+    /// </remarks>
+    public ValueTask DoubleAckAsync(CancellationToken cancellationToken = default)
+        => _msg.AckAsync(new AckOpts { DoubleAck = true }, cancellationToken);
+
+    /// <summary>
     /// Strips the partition prefix from a subject.
     /// </summary>
     /// <param name="subject">The subject with partition prefix.</param>
