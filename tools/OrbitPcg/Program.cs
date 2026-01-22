@@ -192,6 +192,93 @@ staticStepDownCommand.SetAction(async (parseResult, ct) =>
 });
 staticCommand.Add(staticStepDownCommand);
 
+// static member-info
+var staticMemberInfoStreamArg = new Argument<string>("stream") { Description = "Stream name" };
+var staticMemberInfoNameArg = new Argument<string>("name") { Description = "Consumer group name" };
+var staticMemberInfoMemberArg = new Argument<string>("member") { Description = "Member name" };
+var staticMemberInfoCommand = new Command("member-info", "Get member info (membership and active status)") { staticMemberInfoStreamArg, staticMemberInfoNameArg, staticMemberInfoMemberArg };
+staticMemberInfoCommand.Aliases.Add("minfo");
+staticMemberInfoCommand.SetAction(async (parseResult, ct) =>
+{
+    var server = parseResult.GetValue(serverOption)!;
+    var stream = parseResult.GetValue(staticMemberInfoStreamArg)!;
+    var name = parseResult.GetValue(staticMemberInfoNameArg)!;
+    var member = parseResult.GetValue(staticMemberInfoMemberArg)!;
+
+    await using var nats = new NatsConnection(new NatsOpts { Url = server });
+    var js = nats.CreateJetStreamContext();
+
+    var config = await js.GetPcgStaticConfigAsync(stream, name, ct);
+    var isInMembership = NatsPcgPartitionDistributor.IsInMembership(config.Members, config.MemberMappings, member);
+
+    var activeMembers = new List<string>();
+    await foreach (var activeMember in js.ListPcgStaticActiveMembersAsync(stream, name, ct))
+    {
+        activeMembers.Add(activeMember);
+    }
+
+    var isActive = activeMembers.Contains(member);
+
+    Console.WriteLine($"Member: {member}");
+    Console.WriteLine($"  In Membership: {isInMembership}");
+    Console.WriteLine($"  Active:        {isActive}");
+
+    if (isInMembership && !isActive)
+    {
+        Console.WriteLine($"  *** Warning: Member '{member}' is in membership but has NO active instance");
+    }
+});
+staticCommand.Add(staticMemberInfoCommand);
+
+// static consume
+var staticConsumeStreamArg = new Argument<string>("stream") { Description = "Stream name" };
+var staticConsumeNameArg = new Argument<string>("name") { Description = "Consumer group name" };
+var staticConsumeMemberArg = new Argument<string>("member") { Description = "Member name" };
+var staticConsumeSleepOption = new Option<int>("--sleep", "-t") { Description = "Simulated processing time in milliseconds", DefaultValueFactory = _ => 20 };
+var staticConsumeCommand = new Command("consume", "Join a static consumer group and consume messages") { staticConsumeStreamArg, staticConsumeNameArg, staticConsumeMemberArg, staticConsumeSleepOption };
+staticConsumeCommand.Aliases.Add("join");
+staticConsumeCommand.SetAction(async (parseResult, ct) =>
+{
+    var server = parseResult.GetValue(serverOption)!;
+    var stream = parseResult.GetValue(staticConsumeStreamArg)!;
+    var name = parseResult.GetValue(staticConsumeNameArg)!;
+    var member = parseResult.GetValue(staticConsumeMemberArg)!;
+    var sleepMs = parseResult.GetValue(staticConsumeSleepOption);
+
+    await using var nats = new NatsConnection(new NatsOpts { Url = server });
+    var js = nats.CreateJetStreamContext();
+
+    Console.WriteLine($"Joining static consumer group '{name}' as member '{member}'...");
+    Console.WriteLine($"Processing time: {sleepMs}ms");
+    Console.WriteLine("Press Ctrl+C to stop.");
+    Console.WriteLine();
+
+    try
+    {
+        await foreach (var msg in js.ConsumePcgStaticAsync<byte[]>(stream, name, member, cancellationToken: ct))
+        {
+            var metadata = msg.Metadata;
+            var seq = metadata?.Sequence.Stream ?? 0;
+            var pinId = msg.Headers?["Nats-Pin-Id"].ToString() ?? "N/A";
+
+            Console.Write($"[{member}] subject={msg.Subject}, seq={seq}, pinnedID={pinId}. Processing for {sleepMs}ms ... ");
+
+            if (sleepMs > 0)
+            {
+                await Task.Delay(sleepMs, ct);
+            }
+
+            await msg.AckAsync(cancellationToken: ct);
+            Console.WriteLine("acked");
+        }
+    }
+    catch (OperationCanceledException)
+    {
+        Console.WriteLine("\nConsuming stopped.");
+    }
+});
+staticCommand.Add(staticConsumeCommand);
+
 // ============================================================================
 // ELASTIC COMMANDS
 // ============================================================================
@@ -477,8 +564,62 @@ elasticMemberInfoCommand.SetAction(async (parseResult, ct) =>
     Console.WriteLine($"Member: {member}");
     Console.WriteLine($"  In Membership: {isInMembership}");
     Console.WriteLine($"  Active:        {isActive}");
+
+    if (isInMembership && !isActive)
+    {
+        Console.WriteLine($"  *** Warning: Member '{member}' is in membership but has NO active instance");
+    }
 });
 elasticCommand.Add(elasticMemberInfoCommand);
+
+// elastic consume
+var elasticConsumeStreamArg = new Argument<string>("stream") { Description = "Stream name" };
+var elasticConsumeNameArg = new Argument<string>("name") { Description = "Consumer group name" };
+var elasticConsumeMemberArg = new Argument<string>("member") { Description = "Member name" };
+var elasticConsumeSleepOption = new Option<int>("--sleep", "-t") { Description = "Simulated processing time in milliseconds", DefaultValueFactory = _ => 20 };
+var elasticConsumeCommand = new Command("consume", "Join an elastic consumer group and consume messages") { elasticConsumeStreamArg, elasticConsumeNameArg, elasticConsumeMemberArg, elasticConsumeSleepOption };
+elasticConsumeCommand.Aliases.Add("join");
+elasticConsumeCommand.SetAction(async (parseResult, ct) =>
+{
+    var server = parseResult.GetValue(serverOption)!;
+    var stream = parseResult.GetValue(elasticConsumeStreamArg)!;
+    var name = parseResult.GetValue(elasticConsumeNameArg)!;
+    var member = parseResult.GetValue(elasticConsumeMemberArg)!;
+    var sleepMs = parseResult.GetValue(elasticConsumeSleepOption);
+
+    await using var nats = new NatsConnection(new NatsOpts { Url = server });
+    var js = nats.CreateJetStreamContext();
+
+    Console.WriteLine($"Joining elastic consumer group '{name}' as member '{member}'...");
+    Console.WriteLine($"Processing time: {sleepMs}ms");
+    Console.WriteLine("Press Ctrl+C to stop.");
+    Console.WriteLine();
+
+    try
+    {
+        await foreach (var msg in js.ConsumePcgElasticAsync<byte[]>(stream, name, member, cancellationToken: ct))
+        {
+            var metadata = msg.Metadata;
+            var seq = metadata?.Sequence.Stream ?? 0;
+            var pinId = msg.Headers?["Nats-Pin-Id"].ToString() ?? "N/A";
+
+            Console.Write($"[{member}] subject={msg.Subject}, seq={seq}, pinnedID={pinId}. Processing for {sleepMs}ms ... ");
+
+            if (sleepMs > 0)
+            {
+                await Task.Delay(sleepMs, ct);
+            }
+
+            await msg.AckAsync(cancellationToken: ct);
+            Console.WriteLine("acked");
+        }
+    }
+    catch (OperationCanceledException)
+    {
+        Console.WriteLine("\nConsuming stopped.");
+    }
+});
+elasticCommand.Add(elasticConsumeCommand);
 
 // Run
 return await rootCommand.Parse(args).InvokeAsync();
