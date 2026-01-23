@@ -119,12 +119,48 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
                 }
             }
 
-            IAsyncEnumerable<INatsJSMsg<T>>? messages;
+            IAsyncEnumerable<INatsJSMsg<T>> messages;
 
             try
             {
                 if (_consumer == null)
                 {
+                    // Self-heal: if consumer is null but we're in membership, try to rejoin
+                    NatsPcgElasticConfig config;
+                    lock (_configLock)
+                    {
+                        config = _config;
+                    }
+
+                    if (config.IsInMembership(_memberName))
+                    {
+                        try
+                        {
+                            await Task.Delay(NatsPcgConstants.SelfHealInterval, linkedToken).ConfigureAwait(false);
+                            await CreateOrGetConsumerAsync(linkedToken).ConfigureAwait(false);
+                            continue;
+                        }
+                        catch (OperationCanceledException) when (linkedToken.IsCancellationRequested)
+                        {
+                            yield break;
+                        }
+                        catch
+                        {
+                            // Failed to create consumer, will retry after backoff
+                            var delay = GetBackoffDelay();
+                            try
+                            {
+                                await Task.Delay(delay, linkedToken).ConfigureAwait(false);
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                yield break;
+                            }
+
+                            continue;
+                        }
+                    }
+
                     yield break;
                 }
 
@@ -159,61 +195,58 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
                 yield break;
             }
 
-            if (messages != null!)
+            IAsyncEnumerator<INatsJSMsg<T>>? enumerator = null;
+            try
             {
-                IAsyncEnumerator<INatsJSMsg<T>>? enumerator = null;
-                try
+                enumerator = messages.GetAsyncEnumerator(linkedToken);
+                while (true)
                 {
-                    enumerator = messages.GetAsyncEnumerator(linkedToken);
-                    while (true)
+                    bool hasNext;
+                    try
                     {
-                        bool hasNext;
-                        try
-                        {
-                            hasNext = await enumerator.MoveNextAsync().ConfigureAwait(false);
-                        }
-                        catch (OperationCanceledException) when (linkedToken.IsCancellationRequested)
-                        {
-                            yield break;
-                        }
-                        catch (NatsJSApiException ex) when (ex.Error.Code == 404)
-                        {
-                            // Consumer deleted - recreate
-                            if (!_stopped && !linkedToken.IsCancellationRequested)
-                            {
-                                _needsRecreate = true;
-                            }
-
-                            break;
-                        }
-
-                        if (!hasNext)
-                        {
-                            break;
-                        }
-
-                        if (_stopped || linkedToken.IsCancellationRequested)
-                        {
-                            yield break;
-                        }
-
-                        // Check if we need to stop and recreate
-                        if (_needsRecreate)
-                        {
-                            break;
-                        }
-
-                        var msg = enumerator.Current;
-                        string strippedSubject = NatsPcgMsg<T>.StripPartitionPrefix(msg.Subject);
-                        yield return new NatsPcgMsg<T>((NatsJSMsg<T>)msg, strippedSubject);
+                        hasNext = await enumerator.MoveNextAsync().ConfigureAwait(false);
                     }
+                    catch (OperationCanceledException) when (linkedToken.IsCancellationRequested)
+                    {
+                        yield break;
+                    }
+                    catch (NatsJSApiException ex) when (ex.Error.Code == 404)
+                    {
+                        // Consumer deleted - recreate
+                        if (!_stopped && !linkedToken.IsCancellationRequested)
+                        {
+                            _needsRecreate = true;
+                        }
+
+                        break;
+                    }
+
+                    if (!hasNext)
+                    {
+                        break;
+                    }
+
+                    if (_stopped || linkedToken.IsCancellationRequested)
+                    {
+                        yield break;
+                    }
+
+                    // Check if we need to stop and recreate
+                    if (_needsRecreate)
+                    {
+                        break;
+                    }
+
+                    var msg = enumerator.Current;
+                    string strippedSubject = NatsPcgMsg<T>.StripPartitionPrefix(msg.Subject);
+                    yield return new NatsPcgMsg<T>((NatsJSMsg<T>)msg, strippedSubject);
                 }
-                finally
+            }
+            finally
+            {
+                if (enumerator != null)
                 {
-                    if (enumerator != null)
-                    {
-                        await enumerator.DisposeAsync().ConfigureAwait(false);
-                    }
+                    await enumerator.DisposeAsync().ConfigureAwait(false);
                 }
             }
         }

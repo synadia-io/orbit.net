@@ -51,5 +51,5 @@ internal static class NatsPcgConstants
     /// <summary>
     /// Interval for self-healing checks.
     /// </summary>
-    internal static readonly TimeSpan SelfHealInterval = TimeSpan.FromSeconds(30);
+    internal static readonly TimeSpan SelfHealInterval = TimeSpan.FromSeconds(7);
 }

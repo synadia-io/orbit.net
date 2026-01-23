@@ -86,12 +86,42 @@ internal sealed class NatsPcgStaticConsumeContext<T> : IAsyncEnumerable<NatsPcgM
 
         while (!_stopped && !linkedToken.IsCancellationRequested)
         {
-            IAsyncEnumerable<INatsJSMsg<T>>? messages = null;
+            IAsyncEnumerable<INatsJSMsg<T>> messages;
 
             try
             {
                 if (_consumer == null)
                 {
+                    // Self-heal: if consumer is null but we're in membership, try to rejoin
+                    if (_config.IsInMembership(_memberName))
+                    {
+                        try
+                        {
+                            await Task.Delay(NatsPcgConstants.SelfHealInterval, linkedToken).ConfigureAwait(false);
+                            await CreateOrGetConsumerAsync(linkedToken).ConfigureAwait(false);
+                            continue;
+                        }
+                        catch (OperationCanceledException) when (linkedToken.IsCancellationRequested)
+                        {
+                            yield break;
+                        }
+                        catch
+                        {
+                            // Failed to create consumer, will retry after backoff
+                            var delay = GetBackoffDelay();
+                            try
+                            {
+                                await Task.Delay(delay, linkedToken).ConfigureAwait(false);
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                yield break;
+                            }
+
+                            continue;
+                        }
+                    }
+
                     yield break;
                 }
 
@@ -116,53 +146,56 @@ internal sealed class NatsPcgStaticConsumeContext<T> : IAsyncEnumerable<NatsPcgM
             }
             catch (NatsJSApiException ex) when (ex.Error.Code == 404)
             {
-                // Consumer deleted - this is expected when config changes
+                // Consumer deleted - try to self-heal
+                if (!_stopped && !linkedToken.IsCancellationRequested && _config.IsInMembership(_memberName))
+                {
+                    _consumer = null;
+                    continue;
+                }
+
                 yield break;
             }
 
-            if (messages != null)
+            IAsyncEnumerator<INatsJSMsg<T>>? enumerator = null;
+            try
             {
-                IAsyncEnumerator<INatsJSMsg<T>>? enumerator = null;
-                try
+                enumerator = messages.GetAsyncEnumerator(linkedToken);
+                while (true)
                 {
-                    enumerator = messages.GetAsyncEnumerator(linkedToken);
-                    while (true)
+                    bool hasNext;
+                    try
                     {
-                        bool hasNext;
-                        try
-                        {
-                            hasNext = await enumerator.MoveNextAsync().ConfigureAwait(false);
-                        }
-                        catch (OperationCanceledException) when (linkedToken.IsCancellationRequested)
-                        {
-                            yield break;
-                        }
-                        catch (NatsJSApiException ex) when (ex.Error.Code == 404)
-                        {
-                            yield break;
-                        }
-
-                        if (!hasNext)
-                        {
-                            break;
-                        }
-
-                        if (_stopped || linkedToken.IsCancellationRequested)
-                        {
-                            yield break;
-                        }
-
-                        var msg = enumerator.Current;
-                        var strippedSubject = NatsPcgMsg<T>.StripPartitionPrefix(msg.Subject);
-                        yield return new NatsPcgMsg<T>((NatsJSMsg<T>)msg, strippedSubject);
+                        hasNext = await enumerator.MoveNextAsync().ConfigureAwait(false);
                     }
+                    catch (OperationCanceledException) when (linkedToken.IsCancellationRequested)
+                    {
+                        yield break;
+                    }
+                    catch (NatsJSApiException ex) when (ex.Error.Code == 404)
+                    {
+                        yield break;
+                    }
+
+                    if (!hasNext)
+                    {
+                        break;
+                    }
+
+                    if (_stopped || linkedToken.IsCancellationRequested)
+                    {
+                        yield break;
+                    }
+
+                    var msg = enumerator.Current;
+                    var strippedSubject = NatsPcgMsg<T>.StripPartitionPrefix(msg.Subject);
+                    yield return new NatsPcgMsg<T>((NatsJSMsg<T>)msg, strippedSubject);
                 }
-                finally
+            }
+            finally
+            {
+                if (enumerator != null)
                 {
-                    if (enumerator != null)
-                    {
-                        await enumerator.DisposeAsync().ConfigureAwait(false);
-                    }
+                    await enumerator.DisposeAsync().ConfigureAwait(false);
                 }
             }
         }
@@ -305,5 +338,22 @@ internal sealed class NatsPcgStaticConsumeContext<T> : IAsyncEnumerable<NatsPcgM
         }
 
         return result;
+    }
+
+    // ReSharper disable once StaticMemberInGenericType
+    private static readonly Random s_random = new();
+
+    private static TimeSpan GetBackoffDelay()
+    {
+        // Random delay between min and max reconnect delay
+        int delayMs;
+        lock (s_random)
+        {
+            delayMs = s_random.Next(
+                (int)NatsPcgConstants.MinReconnectDelay.TotalMilliseconds,
+                (int)NatsPcgConstants.MaxReconnectDelay.TotalMilliseconds);
+        }
+
+        return TimeSpan.FromMilliseconds(delayMs);
     }
 }
