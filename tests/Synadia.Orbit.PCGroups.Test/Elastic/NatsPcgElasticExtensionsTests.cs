@@ -229,13 +229,14 @@ public class NatsPcgElasticExtensionsTests
             var config = await js.GetPcgElasticConfigAsync(streamName, groupName);
 
             // With 4 partitions and 2 members (a, b):
-            // a gets 0, 2
-            // b gets 1, 3
+            // Using contiguous block algorithm (matches Go implementation):
+            // a gets 0, 1
+            // b gets 2, 3
             var filtersA = config.GetPcgElasticPartitionFilters("a");
             var filtersB = config.GetPcgElasticPartitionFilters("b");
 
-            Assert.Equal(new[] { "0.>", "2.>" }, filtersA);
-            Assert.Equal(new[] { "1.>", "3.>" }, filtersB);
+            Assert.Equal(new[] { "0.>", "1.>" }, filtersA);
+            Assert.Equal(new[] { "2.>", "3.>" }, filtersB);
 
             await js.DeletePcgElasticAsync(streamName, groupName);
         }

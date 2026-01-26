@@ -192,12 +192,13 @@ public class NatsPcgStaticExtensionsTests
         var filtersC = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 6, null, "c");
 
         // With 6 partitions and 3 members (sorted: a, b, c):
-        // a (index 0) gets partitions where i % 3 == 0: 0, 3
-        // b (index 1) gets partitions where i % 3 == 1: 1, 4
-        // c (index 2) gets partitions where i % 3 == 2: 2, 5
-        Assert.Equal(new[] { "0.>", "3.>" }, filtersA);
-        Assert.Equal(new[] { "1.>", "4.>" }, filtersB);
-        Assert.Equal(new[] { "2.>", "5.>" }, filtersC);
+        // Using contiguous block algorithm (matches Go implementation):
+        // a (index 0) gets partitions: 0, 1
+        // b (index 1) gets partitions: 2, 3
+        // c (index 2) gets partitions: 4, 5
+        Assert.Equal(new[] { "0.>", "1.>" }, filtersA);
+        Assert.Equal(new[] { "2.>", "3.>" }, filtersB);
+        Assert.Equal(new[] { "4.>", "5.>" }, filtersC);
     }
 
     [Fact]

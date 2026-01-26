@@ -15,16 +15,17 @@ public class NatsPcgPartitionDistributorTests
         var members = new[] { "m1", "m2", "m3" };
 
         // With 6 partitions and 3 members (sorted: m1, m2, m3):
-        // m1 (index 0) gets partitions where i % 3 == 0: 0, 3
-        // m2 (index 1) gets partitions where i % 3 == 1: 1, 4
-        // m3 (index 2) gets partitions where i % 3 == 2: 2, 5
+        // Using contiguous block algorithm (matches Go implementation):
+        // m1 (index 0) gets partitions: 0, 1
+        // m2 (index 1) gets partitions: 2, 3
+        // m3 (index 2) gets partitions: 4, 5
         var filtersM1 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 6, null, "m1");
         var filtersM2 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 6, null, "m2");
         var filtersM3 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 6, null, "m3");
 
-        Assert.Equal(new[] { "0.>", "3.>" }, filtersM1);
-        Assert.Equal(new[] { "1.>", "4.>" }, filtersM2);
-        Assert.Equal(new[] { "2.>", "5.>" }, filtersM3);
+        Assert.Equal(new[] { "0.>", "1.>" }, filtersM1);
+        Assert.Equal(new[] { "2.>", "3.>" }, filtersM2);
+        Assert.Equal(new[] { "4.>", "5.>" }, filtersM3);
     }
 
     [Fact]
@@ -32,17 +33,17 @@ public class NatsPcgPartitionDistributorTests
     {
         var members = new[] { "m1", "m2", "m3" };
 
-        // With 7 partitions and 3 members:
-        // m1 gets partitions: 0, 3, 6
-        // m2 gets partitions: 1, 4
-        // m3 gets partitions: 2, 5
+        // With 7 partitions and 3 members (contiguous blocks + remainder):
+        // m1 gets partitions: 0, 1, 6 (2 regular + 1 remainder)
+        // m2 gets partitions: 2, 3
+        // m3 gets partitions: 4, 5
         var filtersM1 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 7, null, "m1");
         var filtersM2 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 7, null, "m2");
         var filtersM3 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 7, null, "m3");
 
-        Assert.Equal(new[] { "0.>", "3.>", "6.>" }, filtersM1);
-        Assert.Equal(new[] { "1.>", "4.>" }, filtersM2);
-        Assert.Equal(new[] { "2.>", "5.>" }, filtersM3);
+        Assert.Equal(new[] { "0.>", "1.>", "6.>" }, filtersM1);
+        Assert.Equal(new[] { "2.>", "3.>" }, filtersM2);
+        Assert.Equal(new[] { "4.>", "5.>" }, filtersM3);
     }
 
     [Fact]
@@ -50,17 +51,17 @@ public class NatsPcgPartitionDistributorTests
     {
         var members = new[] { "m1", "m2", "m3" };
 
-        // With 8 partitions and 3 members:
-        // m1 gets partitions: 0, 3, 6
-        // m2 gets partitions: 1, 4, 7
-        // m3 gets partitions: 2, 5
+        // With 8 partitions and 3 members (contiguous blocks + remainder):
+        // m1 gets partitions: 0, 1, 6 (2 regular + 1 remainder)
+        // m2 gets partitions: 2, 3, 7 (2 regular + 1 remainder)
+        // m3 gets partitions: 4, 5
         var filtersM1 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 8, null, "m1");
         var filtersM2 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 8, null, "m2");
         var filtersM3 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 8, null, "m3");
 
-        Assert.Equal(new[] { "0.>", "3.>", "6.>" }, filtersM1);
-        Assert.Equal(new[] { "1.>", "4.>", "7.>" }, filtersM2);
-        Assert.Equal(new[] { "2.>", "5.>" }, filtersM3);
+        Assert.Equal(new[] { "0.>", "1.>", "6.>" }, filtersM1);
+        Assert.Equal(new[] { "2.>", "3.>", "7.>" }, filtersM2);
+        Assert.Equal(new[] { "4.>", "5.>" }, filtersM3);
     }
 
     [Fact]
