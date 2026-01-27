@@ -1,3 +1,5 @@
+[![Test](https://github.com/synadia-io/orbit.net/actions/workflows/test.yml/badge.svg)](https://github.com/synadia-io/orbit.net/actions/workflows/test.yml)
+
 <p align="center">
   <img src="orbit-small.png">
 </p>
