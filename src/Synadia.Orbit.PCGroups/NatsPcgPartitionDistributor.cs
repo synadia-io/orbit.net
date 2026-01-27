@@ -61,12 +61,22 @@ public static class NatsPcgPartitionDistributor
     }
 
     /// <summary>
-    /// Distributes partitions evenly across members.
+    /// Distributes partitions evenly across members using contiguous blocks.
+    /// This algorithm minimizes partition redistribution when members are added/removed.
     /// </summary>
     /// <param name="members">Sorted list of member names.</param>
     /// <param name="maxMembers">Maximum number of members (equals number of partitions).</param>
     /// <param name="memberName">The member name to distribute partitions for.</param>
     /// <returns>Array of partition numbers assigned to this member.</returns>
+    /// <remarks>
+    /// Distribution example with 6 partitions and 3 members:
+    /// - m1: [0, 1], m2: [2, 3], m3: [4, 5]
+    ///
+    /// With 7 partitions and 3 members (remainder goes to first members):
+    /// - m1: [0, 1, 6], m2: [2, 3], m3: [4, 5]
+    ///
+    /// This matches the Go implementation for cross-language interoperability.
+    /// </remarks>
     private static int[] DistributePartitions(string[] members, uint maxMembers, string memberName)
     {
         // Sort members to ensure consistent distribution
@@ -79,15 +89,31 @@ public static class NatsPcgPartitionDistributor
             throw new NatsPcgMembershipException($"Member '{memberName}' not found in members list");
         }
 
-        int numMembers = sortedMembers.Length;
+        uint numMembers = (uint)sortedMembers.Length;
         var partitions = new List<int>();
 
-        // Distribute partitions: member at index 'i' gets partitions where partition % numMembers == i
-        for (int partition = 0; partition < maxMembers; partition++)
+        // Number of partitions per member (rounded down)
+        uint numPer = maxMembers / numMembers;
+
+        for (uint i = 0; i < maxMembers; i++)
         {
-            if (partition % numMembers == memberIndex)
+            if (i < numMembers * numPer)
             {
-                partitions.Add(partition);
+                // Regular distribution: contiguous blocks
+                uint assignedMemberIndex = i / numPer;
+                if (assignedMemberIndex == memberIndex)
+                {
+                    partitions.Add((int)i);
+                }
+            }
+            else
+            {
+                // Remainder partitions: distribute to first members
+                uint remainderIndex = (i - (numMembers * numPer)) % numMembers;
+                if (remainderIndex == memberIndex)
+                {
+                    partitions.Add((int)i);
+                }
             }
         }
 
