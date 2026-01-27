@@ -9,10 +9,11 @@ boost productivity and provide higher abstraction layer for NATS .NET
 clients. Note that these libraries will evolve rapidly and API guarantees are
 not made until the specific project has a v1.0.0 version.
 
-# Utilities
+# Packages
 
-This is a list of the current utilities hosted here
-
-| NuGet                              | Description                                 | Docs                                                        |
-|------------------------------------|---------------------------------------------|-------------------------------------------------------------|
-| Synadia.Orbit.JetStream.Extensions | Extends NATS JetStream client functionality | [README](src/Synadia.Orbit.JetStream.Extensions/PACKAGE.md) |
+| NuGet | Description | Docs |
+|-------|-------------|------|
+| Synadia.Orbit.JetStream.Extensions | Direct batch retrieval and scheduled messages | [README](src/Synadia.Orbit.JetStream.Extensions/PACKAGE.md) |
+| Synadia.Orbit.JetStream.Publisher | High-performance JetStream publishing | [README](src/Synadia.Orbit.JetStream.Publisher/PACKAGE.md) |
+| Synadia.Orbit.KeyValueStore.Extensions | Key encoding codecs for KV stores | [README](src/Synadia.Orbit.KeyValueStore.Extensions/PACKAGE.md) |
+| Synadia.Orbit.PCGroups | Partitioned Consumer Groups for horizontal scaling | [README](src/Synadia.Orbit.PCGroups/PACKAGE.md) |
