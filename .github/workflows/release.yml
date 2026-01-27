@@ -49,7 +49,7 @@ jobs:
               echo "⏭️ $pkg: skipped (preview placeholder)"
               continue
             fi
-            if [ "$(git ls-remote origin "refs/tags/$tag" | wc -l)" = "1" ]; then
+            if [ "$(git ls-remote origin "refs/tags/$tag" | wc -l)" -eq 1 ]; then
               echo "✅ $pkg: $version already released"
               continue
             fi
