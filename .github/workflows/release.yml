@@ -43,15 +43,21 @@ jobs:
           packages=()
           for version_file in src/Synadia.Orbit.*/version.txt; do
             version="$(head -n 1 "$version_file")"
-            if [ "$version" = "1.0.0-preview.0" ]; then
-              continue
-            fi
             pkg="$(basename "$(dirname "$version_file")" | sed 's/Synadia.Orbit.//')"
             tag="$pkg/v$version"
-            if [ "$(git ls-remote origin "refs/tags/$tag" | wc -l)" != "1" ]; then
-              packages+=("{\"pkg\":\"$pkg\",\"tag\":\"$tag\"}")
+            if [ "$version" = "1.0.0-preview.0" ]; then
+              echo "⏭️ $pkg: skipped (preview placeholder)"
+              continue
             fi
+            if [ "$(git ls-remote origin "refs/tags/$tag" | wc -l)" -eq 1 ]; then
+              echo "✅ $pkg: $version already released"
+              continue
+            fi
+            echo "📦 $pkg: $version needs release"
+            packages+=("{\"pkg\":\"$pkg\",\"tag\":\"$tag\"}")
           done
+          echo "---"
+          echo "Total: ${#packages[@]} package(s) to release"
           if [ ${#packages[@]} -eq 0 ]; then
             echo "packages=[]" >> "$GITHUB_OUTPUT"
           else
