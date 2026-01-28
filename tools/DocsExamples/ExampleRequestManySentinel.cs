@@ -18,7 +18,7 @@ public class ExampleRequestManySentinel
         await using var client = new NatsClient();
         var nats = client.Connection;
 
-        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var ct = cts.Token;
 
         // Start a responder service that sends multiple responses
