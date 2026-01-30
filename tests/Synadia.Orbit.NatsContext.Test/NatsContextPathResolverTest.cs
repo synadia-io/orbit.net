@@ -190,6 +190,29 @@ public class NatsContextPathResolverTest
     }
 
     [Fact]
+    public void Load_expands_environment_variables_in_creds_path()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "nats-ctx-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        var original = Environment.GetEnvironmentVariable("NATS_CTX_TEST_DIR");
+        try
+        {
+            Environment.SetEnvironmentVariable("NATS_CTX_TEST_DIR", "/custom/path");
+            var contextFile = Path.Combine(tempDir, "test.json");
+            File.WriteAllText(contextFile, @"{""creds"": ""%NATS_CTX_TEST_DIR%/my.creds""}");
+
+            var ctx = NatsContext.Load(contextFile);
+
+            Assert.Equal("/custom/path/my.creds", ctx.Opts.AuthOpts.CredsFile);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("NATS_CTX_TEST_DIR", original);
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
     public void Load_expands_home_in_creds_path()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "nats-ctx-test-" + Guid.NewGuid().ToString("N"));

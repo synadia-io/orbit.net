@@ -11,7 +11,7 @@ public class ExampleNatsContext
 {
     public static async Task Run()
     {
-        // dotnet add package synadia.orbit.natscontext --prerelease
+        // dotnet add package Synadia.Orbit.NatsContext --prerelease
 
         // Load settings without connecting (useful for inspecting configuration)
         var ctx = NatsContext.Load();
