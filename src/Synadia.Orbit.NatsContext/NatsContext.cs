@@ -58,11 +58,9 @@ public sealed class NatsContext
     /// Creates a connection to the NATS server using this context's options.
     /// </summary>
     /// <param name="configureOpts">An optional callback to customize the <see cref="NatsOpts"/> before connecting.</param>
-    /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns>A connected <see cref="NatsConnection"/>.</returns>
     public async Task<NatsConnection> ConnectAsync(
-        Func<NatsOpts, NatsOpts>? configureOpts = null,
-        CancellationToken cancellationToken = default)
+        Func<NatsOpts, NatsOpts>? configureOpts = null)
     {
         var opts = Opts;
 
