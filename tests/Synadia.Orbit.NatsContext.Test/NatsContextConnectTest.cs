@@ -1,7 +1,6 @@
 // Copyright (c) Synadia Communications, Inc. All rights reserved.
 // Licensed under the Apache License, Version 2.0.
 
-using NATS.Client.Core;
 using Synadia.Orbit.TestUtils;
 
 namespace Synadia.Orbit.NatsContext.Test;
@@ -23,12 +22,11 @@ public class NatsContextConnectTest
             var contextFile = Path.Combine(tempDir, "test.json");
             File.WriteAllText(contextFile, $@"{{""url"": ""{_server.Url}""}}");
 
-            var (connection, settings) = await NatsContext.ConnectAsync(contextFile);
-            await using (connection)
-            {
-                await connection.PingAsync(TestContext.Current.CancellationToken);
-                Assert.Equal(_server.Url, settings.Url);
-            }
+            var ctx = NatsContext.Load(contextFile);
+            await using var connection = await ctx.ConnectAsync();
+
+            await connection.PingAsync(TestContext.Current.CancellationToken);
+            Assert.Equal(_server.Url, ctx.Settings.Url);
         }
         finally
         {
@@ -46,14 +44,13 @@ public class NatsContextConnectTest
             var contextFile = Path.Combine(tempDir, "test.json");
             File.WriteAllText(contextFile, $@"{{""url"": ""{_server.Url}""}}");
 
-            var (connection, _) = await NatsContext.ConnectAsync(contextFile, opts => opts with
+            var ctx = NatsContext.Load(contextFile);
+            await using var connection = await ctx.ConnectAsync(opts => opts with
             {
                 Name = "custom-client-name",
             });
-            await using (connection)
-            {
-                await connection.PingAsync(TestContext.Current.CancellationToken);
-            }
+
+            await connection.PingAsync(TestContext.Current.CancellationToken);
         }
         finally
         {
@@ -76,12 +73,11 @@ public class NatsContextConnectTest
                 Path.Combine(contextDir, "dev.json"),
                 $@"{{""url"": ""{_server.Url}""}}");
 
-            var (connection, settings) = await NatsContext.ConnectAsync("dev");
-            await using (connection)
-            {
-                await connection.PingAsync(TestContext.Current.CancellationToken);
-                Assert.Equal(_server.Url, settings.Url);
-            }
+            var ctx = NatsContext.Load("dev");
+            await using var connection = await ctx.ConnectAsync();
+
+            await connection.PingAsync(TestContext.Current.CancellationToken);
+            Assert.Equal(_server.Url, ctx.Settings.Url);
         }
         finally
         {

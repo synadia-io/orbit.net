@@ -16,10 +16,10 @@ public class NatsContextPathResolverTest
             var contextFile = Path.Combine(tempDir, "test.json");
             File.WriteAllText(contextFile, @"{""url"": ""nats://localhost:4222"", ""user"": ""alice""}");
 
-            var (opts, settings) = NatsContext.Load(contextFile);
+            var ctx = NatsContext.Load(contextFile);
 
-            Assert.Equal("nats://localhost:4222", opts.Url);
-            Assert.Equal("alice", settings.Username);
+            Assert.Equal("nats://localhost:4222", ctx.Opts.Url);
+            Assert.Equal("alice", ctx.Settings.Username);
         }
         finally
         {
@@ -40,9 +40,9 @@ public class NatsContextPathResolverTest
             Environment.SetEnvironmentVariable("XDG_CONFIG_HOME", tempDir);
             File.WriteAllText(Path.Combine(contextDir, "myctx.json"), @"{""url"": ""nats://host:4222""}");
 
-            var (opts, _) = NatsContext.Load("myctx");
+            var ctx = NatsContext.Load("myctx");
 
-            Assert.Equal("nats://host:4222", opts.Url);
+            Assert.Equal("nats://host:4222", ctx.Opts.Url);
         }
         finally
         {
@@ -66,9 +66,9 @@ public class NatsContextPathResolverTest
             File.WriteAllText(Path.Combine(natsDir, "context.txt"), "active-ctx");
             File.WriteAllText(Path.Combine(contextDir, "active-ctx.json"), @"{""url"": ""nats://active:4222""}");
 
-            var (opts, _) = NatsContext.Load();
+            var ctx = NatsContext.Load();
 
-            Assert.Equal("nats://active:4222", opts.Url);
+            Assert.Equal("nats://active:4222", ctx.Opts.Url);
         }
         finally
         {
@@ -89,9 +89,9 @@ public class NatsContextPathResolverTest
         {
             Environment.SetEnvironmentVariable("XDG_CONFIG_HOME", tempDir);
 
-            var (_, settings) = NatsContext.Load();
+            var ctx = NatsContext.Load();
 
-            Assert.Null(settings.Url);
+            Assert.Null(ctx.Settings.Url);
         }
         finally
         {
@@ -178,9 +178,9 @@ public class NatsContextPathResolverTest
             Environment.SetEnvironmentVariable("XDG_CONFIG_HOME", tempDir);
             File.WriteAllText(Path.Combine(contextDir, "xdg.json"), @"{""url"": ""nats://xdg:4222""}");
 
-            var (opts, _) = NatsContext.Load("xdg");
+            var ctx = NatsContext.Load("xdg");
 
-            Assert.Equal("nats://xdg:4222", opts.Url);
+            Assert.Equal("nats://xdg:4222", ctx.Opts.Url);
         }
         finally
         {
@@ -200,9 +200,9 @@ public class NatsContextPathResolverTest
             var contextFile = Path.Combine(tempDir, "test.json");
             File.WriteAllText(contextFile, @"{""creds"": ""~/my.creds""}");
 
-            var (opts, _) = NatsContext.Load(contextFile);
+            var ctx = NatsContext.Load(contextFile);
 
-            Assert.Equal(home + "/my.creds", opts.AuthOpts.CredsFile);
+            Assert.Equal(home + "/my.creds", ctx.Opts.AuthOpts.CredsFile);
         }
         finally
         {

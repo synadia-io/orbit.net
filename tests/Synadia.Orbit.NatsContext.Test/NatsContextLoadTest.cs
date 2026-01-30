@@ -16,13 +16,13 @@ public class NatsContextLoadTest
             var contextFile = Path.Combine(tempDir, "test.json");
             File.WriteAllText(contextFile, @"{""url"": ""nats://testhost:4222"", ""user"": ""bob"", ""password"": ""s3cret""}");
 
-            var (opts, settings) = NatsContext.Load(contextFile);
+            var ctx = NatsContext.Load(contextFile);
 
-            Assert.Equal("nats://testhost:4222", opts.Url);
-            Assert.Equal("bob", opts.AuthOpts.Username);
-            Assert.Equal("s3cret", opts.AuthOpts.Password);
-            Assert.Equal("bob", settings.Username);
-            Assert.Equal("s3cret", settings.Password);
+            Assert.Equal("nats://testhost:4222", ctx.Opts.Url);
+            Assert.Equal("bob", ctx.Opts.AuthOpts.Username);
+            Assert.Equal("s3cret", ctx.Opts.AuthOpts.Password);
+            Assert.Equal("bob", ctx.Settings.Username);
+            Assert.Equal("s3cret", ctx.Settings.Password);
         }
         finally
         {
@@ -45,13 +45,13 @@ public class NatsContextLoadTest
                 Path.Combine(contextDir, "prod.json"),
                 @"{""url"": ""nats://prod:4222"", ""token"": ""t0ken"", ""inbox_prefix"": ""_CUSTOM""}");
 
-            var (opts, settings) = NatsContext.Load("prod");
+            var ctx = NatsContext.Load("prod");
 
-            Assert.Equal("nats://prod:4222", opts.Url);
-            Assert.Equal("t0ken", opts.AuthOpts.Token);
-            Assert.Equal("_CUSTOM", opts.InboxPrefix);
-            Assert.Equal("t0ken", settings.Token);
-            Assert.Equal("_CUSTOM", settings.InboxPrefix);
+            Assert.Equal("nats://prod:4222", ctx.Opts.Url);
+            Assert.Equal("t0ken", ctx.Opts.AuthOpts.Token);
+            Assert.Equal("_CUSTOM", ctx.Opts.InboxPrefix);
+            Assert.Equal("t0ken", ctx.Settings.Token);
+            Assert.Equal("_CUSTOM", ctx.Settings.InboxPrefix);
         }
         finally
         {
@@ -77,9 +77,9 @@ public class NatsContextLoadTest
                 Path.Combine(contextDir, "default.json"),
                 @"{""url"": ""nats://default:4222""}");
 
-            var (opts, settings) = NatsContext.Load();
+            var ctx = NatsContext.Load();
 
-            Assert.Equal("nats://default:4222", opts.Url);
+            Assert.Equal("nats://default:4222", ctx.Opts.Url);
         }
         finally
         {
@@ -100,11 +100,11 @@ public class NatsContextLoadTest
         {
             Environment.SetEnvironmentVariable("XDG_CONFIG_HOME", tempDir);
 
-            var (opts, settings) = NatsContext.Load();
+            var ctx = NatsContext.Load();
 
             // Should return default NatsOpts when no active context
-            Assert.NotNull(opts);
-            Assert.Null(settings.Url);
+            Assert.NotNull(ctx.Opts);
+            Assert.Null(ctx.Settings.Url);
         }
         finally
         {
@@ -142,25 +142,25 @@ public class NatsContextLoadTest
             }";
             File.WriteAllText(contextFile, json);
 
-            var (_, settings) = NatsContext.Load(contextFile);
+            var ctx = NatsContext.Load(contextFile);
 
-            Assert.Equal("nats://host:4222", settings.Url);
-            Assert.Equal("alice", settings.Username);
-            Assert.Equal("pass", settings.Password);
-            Assert.Equal("tok", settings.Token);
-            Assert.Equal("/path/creds", settings.CredentialsPath);
-            Assert.Equal("/path/nkey", settings.NKeyPath);
-            Assert.Equal("/path/cert", settings.CertificatePath);
-            Assert.Equal("/path/key", settings.KeyPath);
-            Assert.Equal("/path/ca", settings.CaCertificatePath);
-            Assert.Equal("_INBOX", settings.InboxPrefix);
-            Assert.Equal("jwt-value", settings.UserJwt);
-            Assert.True(settings.TlsFirst);
-            Assert.Equal("hub", settings.JetStreamDomain);
-            Assert.Equal("$JS.hub.API", settings.JetStreamApiPrefix);
-            Assert.Equal("$JS.hub.EVENT", settings.JetStreamEventPrefix);
-            Assert.Equal("Test context", settings.Description);
-            Assert.Equal("dark", settings.ColorScheme);
+            Assert.Equal("nats://host:4222", ctx.Settings.Url);
+            Assert.Equal("alice", ctx.Settings.Username);
+            Assert.Equal("pass", ctx.Settings.Password);
+            Assert.Equal("tok", ctx.Settings.Token);
+            Assert.Equal("/path/creds", ctx.Settings.CredentialsPath);
+            Assert.Equal("/path/nkey", ctx.Settings.NKeyPath);
+            Assert.Equal("/path/cert", ctx.Settings.CertificatePath);
+            Assert.Equal("/path/key", ctx.Settings.KeyPath);
+            Assert.Equal("/path/ca", ctx.Settings.CaCertificatePath);
+            Assert.Equal("_INBOX", ctx.Settings.InboxPrefix);
+            Assert.Equal("jwt-value", ctx.Settings.UserJwt);
+            Assert.True(ctx.Settings.TlsFirst);
+            Assert.Equal("hub", ctx.Settings.JetStreamDomain);
+            Assert.Equal("$JS.hub.API", ctx.Settings.JetStreamApiPrefix);
+            Assert.Equal("$JS.hub.EVENT", ctx.Settings.JetStreamEventPrefix);
+            Assert.Equal("Test context", ctx.Settings.Description);
+            Assert.Equal("dark", ctx.Settings.ColorScheme);
         }
         finally
         {

@@ -24,28 +24,28 @@ dotnet add package Synadia.Orbit.NatsContext
 ```csharp
 using Synadia.Orbit.NatsContext;
 
-// Connect using the selected context (from context.txt)
-NatsContextConnection result = await NatsContext.ConnectAsync();
-await using var connection = result.Connection;
+// Load the selected context (from context.txt)
+var ctx = NatsContext.Load();
+Console.WriteLine($"Context: {ctx.Settings.Name}, URL: {ctx.Settings.Url}");
 
-// Connect using a named context
-var result = await NatsContext.ConnectAsync("my-context");
+// Connect using the loaded context
+await using var connection = await ctx.ConnectAsync();
+await connection.PublishAsync("greet", "hello");
 
-// Connect using an absolute file path
-var result = await NatsContext.ConnectAsync("/path/to/context.json");
+// Load a named context
+var ctx = NatsContext.Load("my-context");
 
-// Load settings without connecting
-NatsContextResult loaded = NatsContext.Load("my-context");
+// Load from an absolute file path
+var ctx = NatsContext.Load("/path/to/context.json");
 
 // Customize options before connecting
-var result = await NatsContext.ConnectAsync("my-context", opts => opts with
+await using var connection = await ctx.ConnectAsync(opts => opts with
 {
     Name = "my-app",
 });
 
-// Deconstruct results for convenience
-var (connection, settings) = await NatsContext.ConnectAsync();
-var (opts, settings) = NatsContext.Load();
+// Access settings from the context
+Console.WriteLine($"Connected to {ctx.Settings.Url}");
 ```
 
 ## Documentation
