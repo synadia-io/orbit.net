@@ -124,7 +124,25 @@ jobs:
           git tag "${{ matrix.tag }}"
           git push origin "${{ matrix.tag }}"
 
+      - name: Create GitHub Release
+        if: ${{ env.DRY_RUN == 'false' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ matrix.tag }}"
+          VERSION="${TAG#*/v}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "GitHub release for tag '$TAG' already exists; skipping creation."
+          else
+            gh release create "$TAG" --title "Synadia.Orbit.${{ matrix.pkg }} v${VERSION}" --notes ""
+          fi
+
       - name: Tag (dry-run)
         if: ${{ env.DRY_RUN == 'true' }}
         run: |
           echo "Dry-run: would create and push tag ${{ matrix.tag }}"
+
+      - name: Create GitHub Release (dry-run)
+        if: ${{ env.DRY_RUN == 'true' }}
+        run: |
+          echo "Dry-run: would create GitHub release for ${{ matrix.tag }}"
