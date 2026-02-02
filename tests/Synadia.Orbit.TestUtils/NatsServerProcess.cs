@@ -13,9 +13,9 @@ using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
-using System.Net.Sockets;
+using System.Net.Http;
 using System.Runtime.InteropServices;
-using System.Text.RegularExpressions;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -70,8 +70,8 @@ public class NatsServerProcess : IAsyncDisposable, IDisposable
         {
             FileName = natsServerExe,
             Arguments = withJs
-                ? $"{configFlag} -a 127.0.0.1 -p -1 -js -sd \"{sdEsc}\" --ports_file_dir \"{portsFileDirEsc}\""
-                : $"{configFlag} -a 127.0.0.1 -p -1 --ports_file_dir \"{portsFileDirEsc}\"",
+                ? $"{configFlag} -a 127.0.0.1 -p -1 -m -1 -js -sd \"{sdEsc}\" --ports_file_dir \"{portsFileDirEsc}\""
+                : $"{configFlag} -a 127.0.0.1 -p -1 -m -1 --ports_file_dir \"{portsFileDirEsc}\"",
             UseShellExecute = false,
             CreateNoWindow = false,
 
@@ -130,36 +130,35 @@ public class NatsServerProcess : IAsyncDisposable, IDisposable
 
         if (ports == null)
         {
-            throw exception ?? new Exception("Failed to read ports file.");
+            throw new Exception("Failed to read ports file", exception);
         }
 
-        var url = Regex.Match(ports, @"\w+://[\d\.]+:\d+").Groups[0].Value;
+        var portsJson = JsonDocument.Parse(ports);
+        var url = new Uri(portsJson.RootElement.GetProperty("nats")[0].GetString()!);
+        var monitorUrl = new Uri(portsJson.RootElement.GetProperty("monitoring")[0].GetString()!);
         log($"ports={ports}");
         log($"url={url}");
+        log($"monitorUrl={monitorUrl}");
 
+        using var httpClient = new HttpClient();
         for (var i = 0; i < 10; i++)
         {
             try
             {
-                using var tcpClient = new TcpClient();
-                tcpClient.Connect("127.0.0.1", new Uri(url).Port);
-                using var networkStream = tcpClient.GetStream();
-                using var streamReader = new StreamReader(networkStream);
-                var readLine = streamReader.ReadLine();
-                if (readLine == null || !readLine.StartsWith("INFO", StringComparison.OrdinalIgnoreCase))
+                var response = httpClient.GetAsync(new Uri(monitorUrl, "/healthz")).GetAwaiter().GetResult();
+                if (response.IsSuccessStatusCode)
                 {
-                    continue;
+                    return new NatsServerProcess(log, process, url.ToString(), scratch, withJs);
                 }
-
-                return new NatsServerProcess(log, process, url, scratch, withJs);
             }
-            catch
+            catch (Exception e)
             {
+                exception = e;
                 Thread.Sleep(1_000 + (i * 500));
             }
         }
 
-        throw new Exception("Failed to setup the server.");
+        throw new Exception("Failed to setup the server", exception);
     }
 
     public ValueTask DisposeAsync()
