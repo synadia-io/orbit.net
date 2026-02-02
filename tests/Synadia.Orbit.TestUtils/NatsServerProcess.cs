@@ -133,7 +133,7 @@ public class NatsServerProcess : IAsyncDisposable, IDisposable
             throw new Exception("Failed to read ports file", exception);
         }
 
-        var portsJson = JsonDocument.Parse(ports);
+        using var portsJson = JsonDocument.Parse(ports);
         var url = new Uri(portsJson.RootElement.GetProperty("nats")[0].GetString()!);
         var monitorUrl = new Uri(portsJson.RootElement.GetProperty("monitoring")[0].GetString()!);
         log($"ports={ports}");
@@ -145,7 +145,7 @@ public class NatsServerProcess : IAsyncDisposable, IDisposable
         {
             try
             {
-                var response = httpClient.GetAsync(new Uri(monitorUrl, "/healthz")).GetAwaiter().GetResult();
+                using var response = httpClient.GetAsync(new Uri(monitorUrl, "/healthz")).GetAwaiter().GetResult();
                 if (response.IsSuccessStatusCode)
                 {
                     return new NatsServerProcess(log, process, url.ToString(), scratch, withJs);
