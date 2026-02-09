@@ -27,7 +27,7 @@ public class NatsCliPluginTests
         Console.SetOut(sw);
         try
         {
-            var exitCode = await NatsCliPlugin.RunAsync(["--fisk-introspect"], root, options);
+            var exitCode = await root.RunNatsCliPluginAsync(["--fisk-introspect"], options);
 
             Assert.Equal(0, exitCode);
 
@@ -68,7 +68,7 @@ public class NatsCliPluginTests
             Version = "1.0.0",
         };
 
-        var exitCode = await NatsCliPlugin.RunAsync(["list"], root, options);
+        var exitCode = await root.RunNatsCliPluginAsync(["list"], options);
 
         Assert.Equal(0, exitCode);
         Assert.True(executed);
@@ -95,7 +95,7 @@ public class NatsCliPluginTests
         Console.SetOut(sw);
         try
         {
-            var exitCode = await NatsCliPlugin.RunAsync(["--fisk-introspect"], root, options);
+            var exitCode = await root.RunNatsCliPluginAsync(["--fisk-introspect"], options);
 
             Assert.Equal(0, exitCode);
 
@@ -134,7 +134,7 @@ public class NatsCliPluginTests
         Console.SetOut(sw);
         try
         {
-            var exitCode = await NatsCliPlugin.RunAsync(["--fisk-introspect"], root, options);
+            var exitCode = await root.RunNatsCliPluginAsync(["--fisk-introspect"], options);
 
             Assert.Equal(0, exitCode);
 

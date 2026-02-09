@@ -16,11 +16,11 @@ public static class NatsCliPlugin
     /// Runs the plugin. If <c>--fisk-introspect</c> is present in the arguments,
     /// outputs the fisk JSON model and exits. Otherwise, delegates to System.CommandLine.
     /// </summary>
-    /// <param name="args">Command-line arguments.</param>
     /// <param name="rootCommand">The root command defining the plugin's CLI.</param>
+    /// <param name="args">Command-line arguments.</param>
     /// <param name="options">Plugin configuration options.</param>
     /// <returns>The exit code.</returns>
-    public static async Task<int> RunAsync(string[] args, RootCommand rootCommand, NatsCliPluginOptions options)
+    public static async Task<int> RunNatsCliPluginAsync(this RootCommand rootCommand, string[] args, NatsCliPluginOptions options)
     {
         for (var i = 0; i < args.Length; i++)
         {

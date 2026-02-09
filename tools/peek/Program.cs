@@ -175,7 +175,7 @@ reqCmd.SetAction(async (parseResult, ct) =>
     AnsiConsole.Write(panel);
 });
 
-return await NatsCliPlugin.RunAsync(args, root, new NatsCliPluginOptions
+return await root.RunNatsCliPluginAsync(args, new NatsCliPluginOptions
 {
     Name = "peek",
     Version = "0.0.1",
