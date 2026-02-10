@@ -20,6 +20,7 @@
     <Project Path="src/Synadia.Orbit.KeyValueStore.Extensions/Synadia.Orbit.KeyValueStore.Extensions.csproj" />
     <Project Path="src/Synadia.Orbit.PCGroups/Synadia.Orbit.PCGroups.csproj" />
     <Project Path="src/Synadia.Orbit.NatsContext/Synadia.Orbit.NatsContext.csproj" />
+    <Project Path="src/Synadia.Orbit.NatsCli.Plugin/Synadia.Orbit.NatsCli.Plugin.csproj" />
     <Project Path="src/Synadia.Orbit.Testing.NatsServerProcessManager/Synadia.Orbit.Testing.NatsServerProcessManager.csproj" />
   </Folder>
   <Folder Name="/tests/">
@@ -31,10 +32,12 @@
     <Project Path="tests/Synadia.Orbit.PCGroups.Test/Synadia.Orbit.PCGroups.Test.csproj" />
     <Project Path="tests/Synadia.Orbit.NatsContext.Test/Synadia.Orbit.NatsContext.Test.csproj" />
     <Project Path="tests/Synadia.Orbit.TestUtils/Synadia.Orbit.TestUtils.csproj" />
+    <Project Path="tests/Synadia.Orbit.NatsCli.Plugin.Test/Synadia.Orbit.NatsCli.Plugin.Test.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/DocsExamples/DocsExamples.csproj" />
     <Project Path="tools/OrbitPcg/OrbitPcg.csproj" />
     <Project Path="tools/OrbitPublish/OrbitPublish.csproj" />
+    <Project Path="tools/peek/peek.csproj" />
   </Folder>
 </Solution>
