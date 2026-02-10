@@ -1,11 +1,11 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.Text.Json" />
+    <ProjectReference Include="..\..\src\Synadia.Orbit.Testing.NatsServerProcessManager\Synadia.Orbit.Testing.NatsServerProcessManager.csproj" />
   </ItemGroup>
 
 </Project>

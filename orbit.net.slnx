@@ -20,6 +20,7 @@
     <Project Path="src/Synadia.Orbit.KeyValueStore.Extensions/Synadia.Orbit.KeyValueStore.Extensions.csproj" />
     <Project Path="src/Synadia.Orbit.PCGroups/Synadia.Orbit.PCGroups.csproj" />
     <Project Path="src/Synadia.Orbit.NatsContext/Synadia.Orbit.NatsContext.csproj" />
+    <Project Path="src/Synadia.Orbit.Testing.NatsServerProcessManager/Synadia.Orbit.Testing.NatsServerProcessManager.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <File Path="tests/Directory.Build.props" />
