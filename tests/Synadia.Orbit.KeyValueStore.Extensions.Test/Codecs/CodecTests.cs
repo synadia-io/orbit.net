@@ -213,7 +213,7 @@ public class CodecTests
     public async Task NatsKVCodecStore_put_and_get_with_base64()
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
-        await connection.ConnectAsync();
+        await connection.ConnectRetryAsync();
 
         var kv = connection.CreateKeyValueStoreContext();
         string prefix = _server.GetNextId();
@@ -240,7 +240,7 @@ public class CodecTests
     public async Task NatsKVCodecStore_put_and_get_with_path()
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
-        await connection.ConnectAsync();
+        await connection.ConnectRetryAsync();
 
         var kv = connection.CreateKeyValueStoreContext();
         string prefix = _server.GetNextId();
@@ -267,7 +267,7 @@ public class CodecTests
     public async Task NatsKVCodecStore_get_keys_decodes_keys()
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
-        await connection.ConnectAsync();
+        await connection.ConnectRetryAsync();
 
         var kv = connection.CreateKeyValueStoreContext();
         string prefix = _server.GetNextId();
@@ -300,7 +300,7 @@ public class CodecTests
     public async Task NatsKVCodecStore_watch_decodes_keys()
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
-        await connection.ConnectAsync();
+        await connection.ConnectRetryAsync();
 
         var kv = connection.CreateKeyValueStoreContext();
         string prefix = _server.GetNextId();
@@ -336,7 +336,7 @@ public class CodecTests
     public async Task NatsKVCodecStore_history_decodes_keys()
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
-        await connection.ConnectAsync();
+        await connection.ConnectRetryAsync();
 
         var kv = connection.CreateKeyValueStoreContext();
         string prefix = _server.GetNextId();
@@ -370,7 +370,7 @@ public class CodecTests
     public async Task NatsKVCodecStore_delete_with_encoded_key()
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
-        await connection.ConnectAsync();
+        await connection.ConnectRetryAsync();
 
         var kv = connection.CreateKeyValueStoreContext();
         string prefix = _server.GetNextId();
@@ -396,7 +396,7 @@ public class CodecTests
     public async Task NatsKVCodecStore_create_and_update()
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
-        await connection.ConnectAsync();
+        await connection.ConnectRetryAsync();
 
         var kv = connection.CreateKeyValueStoreContext();
         string prefix = _server.GetNextId();
@@ -459,7 +459,7 @@ public class CodecTests
     public async Task Rot13KeyCodec_works_with_kv_store()
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
-        await connection.ConnectAsync();
+        await connection.ConnectRetryAsync();
 
         var kv = connection.CreateKeyValueStoreContext();
         string prefix = _server.GetNextId();

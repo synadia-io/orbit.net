@@ -30,7 +30,7 @@ public class RequestManySentinelTest
             SerializerRegistry = NatsJsonSerializerRegistry.Default,
         };
         await using var nats = new NatsConnection(opts);
-        await nats.ConnectAsync();
+        await nats.ConnectRetryAsync();
 
         var prefix = _server.GetNextId();
         var subject = $"{prefix}.request";
@@ -79,7 +79,7 @@ public class RequestManySentinelTest
     public async Task Sentinel_stops_on_header_condition()
     {
         await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
-        await nats.ConnectAsync();
+        await nats.ConnectRetryAsync();
 
         var prefix = _server.GetNextId();
         var subject = $"{prefix}.request";
@@ -132,7 +132,7 @@ public class RequestManySentinelTest
     public async Task Sentinel_with_empty_message_still_works()
     {
         await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
-        await nats.ConnectAsync();
+        await nats.ConnectRetryAsync();
 
         var prefix = _server.GetNextId();
         var subject = $"{prefix}.request";
@@ -185,7 +185,7 @@ public class RequestManySentinelTest
             SerializerRegistry = NatsJsonSerializerRegistry.Default,
         };
         await using var nats = new NatsConnection(opts);
-        await nats.ConnectAsync();
+        await nats.ConnectRetryAsync();
 
         var prefix = _server.GetNextId();
         var subject = $"{prefix}.request";
