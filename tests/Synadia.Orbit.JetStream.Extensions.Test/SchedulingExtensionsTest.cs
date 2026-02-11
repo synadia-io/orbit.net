@@ -115,7 +115,7 @@ public class SchedulingExtensionsTest
     {
         // Arrange
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
-        await connection.ConnectAsync();
+        await connection.ConnectRetryAsync();
 
         // Check server version - scheduling requires 2.12+
         var version = connection.ServerInfo?.Version ?? "0.0.0";
