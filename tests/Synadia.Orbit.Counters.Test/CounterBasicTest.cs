@@ -27,6 +27,8 @@ public class CounterBasicTest
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
         await connection.ConnectRetryAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 12), $"Server version {connection.ServerInfo?.Version} does not support counters (requires 2.12+)");
+
         var js = connection.CreateJetStreamContext();
         var prefix = _server.GetNextId();
         var ct = TestContext.Current.CancellationToken;
@@ -45,6 +47,8 @@ public class CounterBasicTest
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
         await connection.ConnectRetryAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 12), $"Server version {connection.ServerInfo?.Version} does not support counters (requires 2.12+)");
+
         var js = connection.CreateJetStreamContext();
         var prefix = _server.GetNextId();
         var ct = TestContext.Current.CancellationToken;
@@ -61,6 +65,8 @@ public class CounterBasicTest
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
         await connection.ConnectRetryAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 12), $"Server version {connection.ServerInfo?.Version} does not support counters (requires 2.12+)");
+
         var js = connection.CreateJetStreamContext();
         var prefix = _server.GetNextId();
         var ct = TestContext.Current.CancellationToken;
@@ -78,6 +84,8 @@ public class CounterBasicTest
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
         await connection.ConnectRetryAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 12), $"Server version {connection.ServerInfo?.Version} does not support counters (requires 2.12+)");
+
         var js = connection.CreateJetStreamContext();
         var prefix = _server.GetNextId();
         var ct = TestContext.Current.CancellationToken;
@@ -95,6 +103,8 @@ public class CounterBasicTest
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
         await connection.ConnectRetryAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 12), $"Server version {connection.ServerInfo?.Version} does not support counters (requires 2.12+)");
+
         var js = connection.CreateJetStreamContext();
         var prefix = _server.GetNextId();
         var ct = TestContext.Current.CancellationToken;
@@ -112,6 +122,8 @@ public class CounterBasicTest
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
         await connection.ConnectRetryAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 12), $"Server version {connection.ServerInfo?.Version} does not support counters (requires 2.12+)");
+
         var js = connection.CreateJetStreamContext();
         var prefix = _server.GetNextId();
         var ct = TestContext.Current.CancellationToken;
@@ -129,6 +141,8 @@ public class CounterBasicTest
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
         await connection.ConnectRetryAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 12), $"Server version {connection.ServerInfo?.Version} does not support counters (requires 2.12+)");
+
         var js = connection.CreateJetStreamContext();
         var prefix = _server.GetNextId();
         var ct = TestContext.Current.CancellationToken;
@@ -145,6 +159,8 @@ public class CounterBasicTest
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
         await connection.ConnectRetryAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 12), $"Server version {connection.ServerInfo?.Version} does not support counters (requires 2.12+)");
+
         var js = connection.CreateJetStreamContext();
         var prefix = _server.GetNextId();
         var ct = TestContext.Current.CancellationToken;
@@ -166,6 +182,8 @@ public class CounterBasicTest
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
         await connection.ConnectRetryAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 12), $"Server version {connection.ServerInfo?.Version} does not support counters (requires 2.12+)");
+
         var js = connection.CreateJetStreamContext();
         var prefix = _server.GetNextId();
         var ct = TestContext.Current.CancellationToken;

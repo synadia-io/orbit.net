@@ -45,4 +45,22 @@ public static class NatsUtils
             throw exception;
         }
     }
+
+    /// <summary>
+    /// Checks if the connected NATS server version is at least the specified minimum.
+    /// </summary>
+    /// <param name="connection">The NATS connection.</param>
+    /// <param name="minMajor">Minimum major version.</param>
+    /// <param name="minMinor">Minimum minor version.</param>
+    /// <returns>True if the server version meets the minimum requirement.</returns>
+    public static bool HasMinServerVersion(this NatsConnection connection, int minMajor, int minMinor)
+    {
+        var version = connection.ServerInfo?.Version ?? "0.0.0";
+        if (Version.TryParse(version.Split('-')[0], out var v) && v >= new Version(minMajor, minMinor))
+        {
+            return true;
+        }
+
+        return false;
+    }
 }
