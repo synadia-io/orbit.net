@@ -192,7 +192,7 @@ public struct IO_COUNTERS
     /// <summary>Write operation count.</summary>
     public ulong WriteOperationCount;
 
-    /// <summary>Other operation count.</summary>
+    /// <summary>Another operation count.</summary>
     public ulong OtherOperationCount;
 
     /// <summary>Read transfer count.</summary>
@@ -201,7 +201,7 @@ public struct IO_COUNTERS
     /// <summary>Write transfer count.</summary>
     public ulong WriteTransferCount;
 
-    /// <summary>Other transfer count.</summary>
+    /// <summary>Another transfer count.</summary>
     public ulong OtherTransferCount;
 }
 
