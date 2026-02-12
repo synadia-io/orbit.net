@@ -14,6 +14,7 @@
     <ProjectReference Include="..\..\src\Synadia.Orbit.KeyValueStore.Extensions\Synadia.Orbit.KeyValueStore.Extensions.csproj" />
     <ProjectReference Include="..\..\src\Synadia.Orbit.NatsContext\Synadia.Orbit.NatsContext.csproj" />
     <ProjectReference Include="..\..\src\Synadia.Orbit.PCGroups\Synadia.Orbit.PCGroups.csproj" />
+    <ProjectReference Include="..\..\src\Synadia.Orbit.Counters\Synadia.Orbit.Counters.csproj" />
   </ItemGroup>
 
   <ItemGroup>
