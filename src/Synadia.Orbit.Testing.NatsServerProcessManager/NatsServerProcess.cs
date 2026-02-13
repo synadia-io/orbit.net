@@ -21,14 +21,19 @@ public class NatsServerProcess : IAsyncDisposable, IDisposable
     private readonly Process _process;
     private readonly string _scratch;
     private readonly bool _withJs;
+    private readonly string? _config;
+    private readonly int _port;
+    private bool _stopped;
 
-    private NatsServerProcess(Action<string> logger, Process process, string url, string scratch, bool withJs)
+    private NatsServerProcess(Action<string> logger, Process process, string url, string scratch, bool withJs, string? config, int port)
     {
         Url = url;
         _logger = logger;
         _process = process;
         _scratch = scratch;
         _withJs = withJs;
+        _config = config;
+        _port = port;
     }
 
     /// <summary>
@@ -37,14 +42,31 @@ public class NatsServerProcess : IAsyncDisposable, IDisposable
     public string Url { get; }
 
     /// <summary>
+    /// Gets the process ID of the running NATS server.
+    /// </summary>
+    public int Pid => _process.Id;
+
+    /// <summary>
+    /// Gets the configuration file path, if one was provided at startup.
+    /// </summary>
+    public string? Config => _config;
+
+    /// <summary>
+    /// Gets the port the NATS server is listening on.
+    /// </summary>
+    public int Port => new Uri(Url).Port;
+
+    /// <summary>
     /// Starts a new NATS server process asynchronously.
     /// </summary>
     /// <param name="logger">Optional logging callback for server output.</param>
     /// <param name="config">Optional path to a NATS server configuration file.</param>
     /// <param name="withJs">Whether to enable JetStream. Defaults to <c>true</c>.</param>
+    /// <param name="port">Port for the server to listen on. Use <c>-1</c> (default) for automatic port assignment.</param>
+    /// <param name="scratch">Optional scratch directory for server data. If not specified, a temporary directory is created.</param>
     /// <returns>A <see cref="NatsServerProcess"/> managing the started server.</returns>
-    public static ValueTask<NatsServerProcess> StartAsync(Action<string>? logger = null, string? config = null, bool withJs = true)
-        => new(Start(logger, config, withJs));
+    public static ValueTask<NatsServerProcess> StartAsync(Action<string>? logger = null, string? config = null, bool withJs = true, int port = -1, string? scratch = null)
+        => new(Start(logger, config, withJs, port, scratch));
 
     /// <summary>
     /// Starts a new NATS server process.
@@ -52,14 +74,16 @@ public class NatsServerProcess : IAsyncDisposable, IDisposable
     /// <param name="logger">Optional logging callback for server output.</param>
     /// <param name="config">Optional path to a NATS server configuration file.</param>
     /// <param name="withJs">Whether to enable JetStream. Defaults to <c>true</c>.</param>
+    /// <param name="port">Port for the server to listen on. Use <c>-1</c> (default) for automatic port assignment.</param>
+    /// <param name="scratch">Optional scratch directory for server data. If not specified, a temporary directory is created.</param>
     /// <returns>A <see cref="NatsServerProcess"/> managing the started server.</returns>
     /// <exception cref="Exception">Thrown when the server fails to start or respond to health checks.</exception>
-    public static NatsServerProcess Start(Action<string>? logger = null, string? config = null, bool withJs = true)
+    public static NatsServerProcess Start(Action<string>? logger = null, string? config = null, bool withJs = true, int port = -1, string? scratch = null)
     {
         var isLoggingEnabled = logger != null;
         var log = logger ?? (_ => { });
 
-        var scratch = Path.Combine(Path.GetTempPath(), "nats.net.tests", Guid.NewGuid().ToString());
+        scratch ??= Path.Combine(Path.GetTempPath(), "nats.net.tests", Guid.NewGuid().ToString());
 
         var portsFileDir = Path.Combine(scratch, "port");
         Directory.CreateDirectory(portsFileDir);
@@ -82,8 +106,8 @@ public class NatsServerProcess : IAsyncDisposable, IDisposable
         {
             FileName = natsServerExe,
             Arguments = withJs
-                ? $"{configFlag} -a 127.0.0.1 -p -1 -m -1 -js -sd \"{sdEsc}\" --ports_file_dir \"{portsFileDirEsc}\""
-                : $"{configFlag} -a 127.0.0.1 -p -1 -m -1 --ports_file_dir \"{portsFileDirEsc}\"",
+                ? $"{configFlag} -a 127.0.0.1 -p {port} -m -1 -js -sd \"{sdEsc}\" --ports_file_dir \"{portsFileDirEsc}\""
+                : $"{configFlag} -a 127.0.0.1 -p {port} -m -1 --ports_file_dir \"{portsFileDirEsc}\"",
             UseShellExecute = false,
             CreateNoWindow = false,
             RedirectStandardError = true,
@@ -154,7 +178,7 @@ public class NatsServerProcess : IAsyncDisposable, IDisposable
                 using var response = httpClient.GetAsync(new Uri(monitorUrl, "/healthz")).GetAwaiter().GetResult();
                 if (response.IsSuccessStatusCode)
                 {
-                    return new NatsServerProcess(log, process, url.ToString(), scratch, withJs);
+                    return new NatsServerProcess(log, process, url.ToString(), scratch, withJs, config, url.Port);
                 }
             }
             catch (Exception e)
@@ -167,16 +191,36 @@ public class NatsServerProcess : IAsyncDisposable, IDisposable
         throw new Exception("Failed to setup the server", exception);
     }
 
-    /// <inheritdoc />
-    public ValueTask DisposeAsync()
+    /// <summary>
+    /// Stops the NATS server process and restarts it with the same configuration.
+    /// </summary>
+    /// <returns>A new <see cref="NatsServerProcess"/> managing the restarted server.</returns>
+    public ValueTask<NatsServerProcess> RestartAsync()
     {
-        Dispose();
+        Stop();
+        return StartAsync(_logger, _config, _withJs, _port, _scratch);
+    }
+
+    /// <summary>
+    /// Stops the NATS server process asynchronously.
+    /// </summary>
+    /// <returns>A <see cref="ValueTask"/> representing the asynchronous operation.</returns>
+    public ValueTask StopAsync()
+    {
+        Stop();
         return default;
     }
 
-    /// <inheritdoc />
-    public void Dispose()
+    /// <summary>
+    /// Stops the NATS server process.
+    /// </summary>
+    public void Stop()
     {
+        if (_stopped)
+        {
+            return;
+        }
+
         for (var i = 0; i < 10; i++)
         {
             try
@@ -193,6 +237,24 @@ public class NatsServerProcess : IAsyncDisposable, IDisposable
                 break;
             }
         }
+
+        _stopped = true;
+
+        // Give OS some time to clean up
+        Thread.Sleep(500);
+    }
+
+    /// <inheritdoc />
+    public ValueTask DisposeAsync()
+    {
+        Dispose();
+        return default;
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        Stop();
 
         for (var i = 0; i < 3; i++)
         {
