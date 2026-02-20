@@ -128,7 +128,7 @@ var schedule = new NatsMsgSchedule(TimeSpan.FromMinutes(5), "sensors.sampled")
     Ttl = TimeSpan.FromMinutes(6),
 };
 
-var ack = await js.PublishScheduledAsync("sensors.schedule", (byte[]?)null, schedule);
+var ack = await js.PublishScheduledAsync("sensors.schedule", schedule);
 
 ack.EnsureSuccess();
 // Every 5 minutes the server will:

@@ -53,6 +53,37 @@ public static class JetStreamExtensions
     }
 
     /// <summary>
+    /// Publishes a scheduled message to a JetStream stream without message data.
+    /// This is typically used with <see cref="NatsMsgSchedule.Source"/> where the data is sourced
+    /// from another subject when the schedule fires.
+    /// </summary>
+    /// <param name="context">The JetStream context.</param>
+    /// <param name="subject">The subject to publish the scheduled message to.</param>
+    /// <param name="schedule">The schedule configuration specifying when and where to deliver the message.</param>
+    /// <param name="opts">Optional publish options.</param>
+    /// <param name="headers">Optional additional headers to include with the message.</param>
+    /// <param name="cancellationToken">A <see cref="CancellationToken"/> used to cancel the operation.</param>
+    /// <returns>A <see cref="PubAckResponse"/> indicating the result of the publish operation.</returns>
+    /// <remarks>
+    /// The stream must have <c>AllowMsgSchedules</c> enabled. If using TTL, the stream must also have
+    /// <c>AllowMsgTTL</c> enabled. The target subject specified in the schedule must be within the
+    /// stream's subject filter.
+    /// <para>Server version requirements: <c>@at</c> schedules require NATS Server 2.12+.
+    /// <c>@every</c> (repeating interval) and <c>Source</c> (data sampling) require NATS Server 2.14+.</para>
+    /// </remarks>
+    public static ValueTask<PubAckResponse> PublishScheduledAsync(
+        this INatsJSContext context,
+        string subject,
+        NatsMsgSchedule schedule,
+        NatsJSPubOpts? opts = null,
+        NatsHeaders? headers = null,
+        CancellationToken cancellationToken = default)
+    {
+        var mergedHeaders = schedule.ToHeaders(headers);
+        return context.PublishAsync<byte[]?>(subject, null, opts: opts, headers: mergedHeaders, cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
     /// Publishes a scheduled message to a JetStream stream.
     /// </summary>
     /// <typeparam name="T">The type of the message data.</typeparam>

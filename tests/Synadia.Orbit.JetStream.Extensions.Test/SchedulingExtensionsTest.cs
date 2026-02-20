@@ -350,7 +350,6 @@ public class SchedulingExtensionsTest
 
         await js.PublishScheduledAsync(
             $"{prefix}foo.schedule",
-            (byte[]?)null,
             schedule,
             cancellationToken: ct);
 
@@ -417,7 +416,6 @@ public class SchedulingExtensionsTest
 
         var ack = await js.PublishScheduledAsync(
             $"{prefix}foo.schedule",
-            (byte[]?)null,
             schedule,
             cancellationToken: ct);
 
@@ -458,7 +456,6 @@ public class SchedulingExtensionsTest
 
         var ack = await js.PublishScheduledAsync(
             $"{prefix}foo.schedule",
-            (byte[]?)null,
             schedule,
             cancellationToken: ct);
 
@@ -474,7 +471,6 @@ public class SchedulingExtensionsTest
 
         ack = await js.PublishScheduledAsync(
             $"{prefix}foo.schedule",
-            (byte[]?)null,
             schedule,
             cancellationToken: ct);
 
@@ -490,7 +486,6 @@ public class SchedulingExtensionsTest
 
         ack = await js.PublishScheduledAsync(
             $"{prefix}foo.schedule",
-            (byte[]?)null,
             schedule,
             cancellationToken: ct);
 
@@ -506,7 +501,6 @@ public class SchedulingExtensionsTest
 
         ack = await js.PublishScheduledAsync(
             $"{prefix}foo.schedule",
-            (byte[]?)null,
             schedule,
             cancellationToken: ct);
 
@@ -609,7 +603,6 @@ public class SchedulingExtensionsTest
 
         var ack = await js.PublishScheduledAsync(
             $"{prefix}foo.schedule",
-            (byte[]?)null,
             schedule,
             cancellationToken: ct);
 
