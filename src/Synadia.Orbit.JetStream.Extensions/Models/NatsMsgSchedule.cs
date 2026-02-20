@@ -9,10 +9,16 @@ namespace Synadia.Orbit.JetStream.Extensions.Models;
 /// Represents a scheduled message configuration for JetStream message scheduling.
 /// </summary>
 /// <remarks>
-/// This record is used to specify parameters for scheduling a message to be delivered
-/// at a future time to a target subject within the same stream.
-/// Supports cron expressions (e.g. <c>"0 0 * * *"</c>), interval patterns (e.g. <c>"@every 5m"</c>),
-/// or one-time schedules (e.g. <c>"@at 2024-01-01T00:00:00Z"</c>).
+/// <para>This record is used to specify parameters for scheduling a message to be delivered
+/// at a future time to a target subject within the same stream.</para>
+/// <para>Supported schedule types:</para>
+/// <list type="bullet">
+/// <item><c>@at</c> — one-time delivery at a specific time (NATS Server 2.12+)</item>
+/// <item><c>@every</c> — repeating delivery at a fixed interval (NATS Server 2.14+)</item>
+/// </list>
+/// <para>Cron expressions are defined in <see href="https://github.com/nats-io/nats-architecture-and-design/blob/main/adr/ADR-51.md">ADR-51</see>
+/// but not yet implemented in the server. Use the <see cref="NatsMsgSchedule(string, string)"/> constructor
+/// for forward compatibility with future schedule types.</para>
 /// </remarks>
 public record NatsMsgSchedule
 {
@@ -23,6 +29,7 @@ public record NatsMsgSchedule
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NatsMsgSchedule"/> class with a one-time <c>@at</c> schedule.
+    /// Requires NATS Server 2.12 or later.
     /// </summary>
     /// <param name="scheduleAt">The scheduled delivery time. Will be converted to UTC and truncated to whole seconds
     /// (the server only supports second-level precision for <c>@at</c> schedules).</param>
@@ -44,11 +51,12 @@ public record NatsMsgSchedule
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NatsMsgSchedule"/> class with a repeating <c>@every</c> interval.
+    /// Requires NATS Server 2.14 or later.
     /// </summary>
-    /// <param name="interval">The interval between firings. Must be at least 1 second.</param>
+    /// <param name="interval">The interval between firings. Must be at least 1 second with no sub-second component.</param>
     /// <param name="target">The target subject for message delivery.</param>
     /// <exception cref="ArgumentException">Thrown when target is null or whitespace.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when interval is less than 1 second.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when interval is less than 1 second or has a sub-second component.</exception>
     public NatsMsgSchedule(TimeSpan interval, string target)
     {
         if (string.IsNullOrWhiteSpace(target))
@@ -73,8 +81,10 @@ public record NatsMsgSchedule
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NatsMsgSchedule"/> class with a raw schedule expression.
+    /// Use this constructor for forward compatibility with future schedule types (e.g. cron expressions).
     /// </summary>
-    /// <param name="schedule">The schedule expression (cron, <c>@every</c>, or <c>@at</c>).</param>
+    /// <param name="schedule">The schedule expression. Currently the server supports <c>@at</c> (2.12+)
+    /// and <c>@every</c> (2.14+). Cron expressions are planned but not yet implemented server-side.</param>
     /// <param name="target">The target subject for message delivery.</param>
     /// <exception cref="ArgumentException">Thrown when schedule or target is null or whitespace.</exception>
     public NatsMsgSchedule(string schedule, string target)
@@ -107,8 +117,8 @@ public record NatsMsgSchedule
     /// Gets the raw schedule expression.
     /// </summary>
     /// <remarks>
-    /// Supports cron expressions (e.g. <c>"0 0 * * *"</c>), interval patterns (e.g. <c>"@every 5m"</c>),
-    /// or one-time schedules (e.g. <c>"@at 2024-01-01T00:00:00Z"</c>).
+    /// Currently supported by the server: <c>@at</c> (2.12+) and <c>@every</c> (2.14+).
+    /// Cron expressions are planned in ADR-51 but not yet implemented server-side.
     /// </remarks>
     public string Schedule { get; }
 
@@ -132,10 +142,11 @@ public record NatsMsgSchedule
 
     /// <summary>
     /// Gets the optional source subject from which to source the last message's data and headers
-    /// when the schedule fires.
+    /// when the schedule fires. Requires NATS Server 2.14 or later.
     /// </summary>
     /// <remarks>
     /// The source subject must be a literal (no wildcards), and must not match the schedule or target subjects.
+    /// If no message exists on the source subject when the schedule fires, the schedule is removed.
     /// Requires the stream to have <c>AllowMsgSchedules</c> enabled.
     /// </remarks>
     public string? Source { get; init; }

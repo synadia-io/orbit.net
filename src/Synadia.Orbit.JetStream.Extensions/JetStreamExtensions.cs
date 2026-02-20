@@ -68,7 +68,9 @@ public static class JetStreamExtensions
     /// <remarks>
     /// The stream must have <c>AllowMsgSchedules</c> enabled. If using TTL, the stream must also have
     /// <c>AllowMsgTTL</c> enabled. The target subject specified in the schedule must be within the
-    /// stream's subject filter. This feature requires NATS Server v2.12 or later.
+    /// stream's subject filter.
+    /// <para>Server version requirements: <c>@at</c> schedules require NATS Server 2.12+.
+    /// <c>@every</c> (repeating interval) and <c>Source</c> (data sampling) require NATS Server 2.14+.</para>
     /// </remarks>
     public static ValueTask<PubAckResponse> PublishScheduledAsync<T>(
         this INatsJSContext context,
