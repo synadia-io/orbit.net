@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-    <NatsVersion>2.7.2-preview.1</NatsVersion>
+    <NatsVersion>2.7.2</NatsVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="NATS.Net" Version="$(NatsVersion)" />
