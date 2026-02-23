@@ -18,6 +18,7 @@
     <Project Path="src/Synadia.Orbit.JetStream.Extensions/Synadia.Orbit.JetStream.Extensions.csproj" />
     <Project Path="src/Synadia.Orbit.JetStream.Publisher/Synadia.Orbit.JetStream.Publisher.csproj" />
     <Project Path="src/Synadia.Orbit.KeyValueStore.Extensions/Synadia.Orbit.KeyValueStore.Extensions.csproj" />
+    <Project Path="src/Synadia.Orbit.ParameterizedSubject/Synadia.Orbit.ParameterizedSubject.csproj" />
     <Project Path="src/Synadia.Orbit.PCGroups/Synadia.Orbit.PCGroups.csproj" />
     <Project Path="src/Synadia.Orbit.NatsContext/Synadia.Orbit.NatsContext.csproj" />
     <Project Path="src/Synadia.Orbit.NatsCli.Plugin/Synadia.Orbit.NatsCli.Plugin.csproj" />
@@ -30,6 +31,7 @@
     <Project Path="tests/Synadia.Orbit.JetStream.Extensions.Test/Synadia.Orbit.JetStream.Extensions.Test.csproj" />
     <Project Path="tests/Synadia.Orbit.JetStream.Publisher.Test/Synadia.Orbit.JetStream.Publisher.Test.csproj" />
     <Project Path="tests/Synadia.Orbit.KeyValueStore.Extensions.Test/Synadia.Orbit.KeyValueStore.Extensions.Test.csproj" />
+    <Project Path="tests/Synadia.Orbit.ParameterizedSubject.Test/Synadia.Orbit.ParameterizedSubject.Test.csproj" />
     <Project Path="tests/Synadia.Orbit.PCGroups.Test/Synadia.Orbit.PCGroups.Test.csproj" />
     <Project Path="tests/Synadia.Orbit.NatsContext.Test/Synadia.Orbit.NatsContext.Test.csproj" />
     <Project Path="tests/Synadia.Orbit.TestUtils/Synadia.Orbit.TestUtils.csproj" />
