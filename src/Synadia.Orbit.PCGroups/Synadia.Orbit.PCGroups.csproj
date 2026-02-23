@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>true</IsPackable>
+    <!-- Suppress StyleCop warnings for internal classes and member ordering -->
+    <NoWarn>$(NoWarn);SA1600;SA1602;SA1615;SA1612;SA1402;SA1202;SA1204;SA1513;SA1308;SA1311;SA1201;VSTHRD003</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NATS.Client.JetStream" />
+    <PackageReference Include="NATS.Client.KeyValueStore" />
+  </ItemGroup>
+
+</Project>

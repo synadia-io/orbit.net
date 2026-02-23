@@ -27,7 +27,7 @@ public class MultiDirectGetTest
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
 
-        await connection.ConnectAsync();
+        await connection.ConnectRetryAsync();
 
         // TODO: do proper version check
         if (!connection.ServerInfo!.Version.StartsWith("2.11."))

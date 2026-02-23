@@ -3,6 +3,7 @@
 
 using System;
 using System.Threading;
+using Synadia.Orbit.Testing.NatsServerProcessManager;
 
 namespace Synadia.Orbit.TestUtils;
 

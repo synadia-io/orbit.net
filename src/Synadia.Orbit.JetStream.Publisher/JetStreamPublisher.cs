@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Synadia Communications, Inc. All rights reserved.
 // Licensed under the Apache License, Version 2.0.
 
-#pragma warning disable
-
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -13,56 +11,26 @@ using NATS.Client.JetStream.Models;
 
 namespace Synadia.Orbit.JetStream.Publisher;
 
+/// <summary>
+/// Represents a high-level JetStream publisher for publishing messages to NATS JetStream.
+/// </summary>
+/// <typeparam name="T">The type of the data to be published in messages.</typeparam>
 public class JetStreamPublisher<T>
 {
     private readonly INatsConnection _connection;
     private readonly INatsSerialize<T>? _serializer;
-
-    public class MsgStatus<T>
-    {
-        public static readonly MsgStatus<T> AcknowledgedStatus = new MsgStatus<T> { Acknowledged = true };
-
-        internal JetStreamPublisher<T> Publisher { get; }
-
-        public bool Acknowledged { get; init; }
-
-        public long Id { get; init; }
-
-        public Exception? Error { get; init; }
-
-        public PubAckResponse? Ackowlegment { get; init; }
-
-        public string? Subject { get; init; }
-
-        public T? Data { get; init; }
-
-        public NatsHeaders? Headers { get; init; }
-
-        public void Remove() => Publisher.Remove(Id);
-    }
-
-    class Msg<T>
-    {
-        public long Id { get; set; }
-
-        public string Subject { get; set; }
-
-        public T Data { get; set; }
-
-        public NatsHeaders? Headers { get; set; }
-
-        public Stopwatch Published { get; set; }
-
-        public TimeSpan TotalTimeout { get; set; } = TimeSpan.Zero;
-    }
-
-
     private readonly Channel<int> _channel;
     private readonly string _inboxPrefix;
     private readonly ConcurrentDictionary<long, Msg<T>> _messages = new();
     private long _id;
-    private INatsSub<PubAckResponse> _sub;
+    private INatsSub<PubAckResponse>? _sub;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="JetStreamPublisher{T}"/> class.
+    /// Represents a high-level JetStream publisher for publishing messages to NATS JetStream.
+    /// </summary>
+    /// <param name="connection">NATS connection.</param>
+    /// <param name="serializer">Message payload serializer.</param>
     public JetStreamPublisher(INatsConnection connection, INatsSerialize<T>? serializer = null)
     {
         _connection = connection;
@@ -71,6 +39,11 @@ public class JetStreamPublisher<T>
         _inboxPrefix = $"_INBOX.{Nuid.NewNuid()}.";
     }
 
+    /// <summary>
+    /// Starts the asynchronous operation for the JetStream publisher, initializing necessary subscriptions.
+    /// </summary>
+    /// <param name="cancellationToken">Token to observe for cancellation requests.</param>
+    /// <returns>A task representing the asynchronous operation.</returns>
     public async ValueTask StartAsync(CancellationToken cancellationToken = default)
     {
         _sub = await _connection.SubscribeCoreAsync<PubAckResponse>(
@@ -78,7 +51,15 @@ public class JetStreamPublisher<T>
             serializer: NatsJSJsonSerializer<PubAckResponse>.Default,
             cancellationToken: cancellationToken);
     }
-    public async IAsyncEnumerable<MsgStatus<T>> SubscribeAsync([EnumeratorCancellation] CancellationToken cancellationToken = default)
+
+    /// <summary>
+    /// Subscribes asynchronously to message status updates from the JetStream publisher.
+    /// Uses an asynchronous enumerable to provide real-time updates of message statuses as they occur.
+    /// </summary>
+    /// <param name="cancellationToken">Token to monitor for cancellation requests.</param>
+    /// <returns>An asynchronous enumerable of <see cref="MsgStatus{T}"/> representing the status of published messages.</returns>
+    public async IAsyncEnumerable<MsgStatus<T>> SubscribeAsync(
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var channel = Channel.CreateUnbounded<MsgStatus<T>>();
 
@@ -87,7 +68,7 @@ public class JetStreamPublisher<T>
             {
                 while (cancellationToken.IsCancellationRequested == false)
                 {
-                    var natsMsg = await _sub.Msgs.ReadAsync(cancellationToken);
+                    var natsMsg = await _sub!.Msgs.ReadAsync(cancellationToken);
 
                     _channel.Reader.TryRead(out _);
 
@@ -100,13 +81,24 @@ public class JetStreamPublisher<T>
                     if (!long.TryParse(lastTokenSpan, out long id))
 #endif
                     {
-                        await channel.Writer.WriteAsync(new MsgStatus<T> { Error = new CannotParseSubjectException(natsMsg.Subject) }, cancellationToken);
+                        await channel.Writer.WriteAsync(
+                            new MsgStatus<T>
+                            {
+                                Error = JetStreamPublisherException.CannotParseSubject(natsMsg.Subject),
+                            },
+                            cancellationToken);
                         continue;
                     }
 
-                    if (!_messages.TryRemove(id, out Msg<T> msg))
+                    if (!_messages.TryRemove(id, out Msg<T>? msg))
                     {
-                        await channel.Writer.WriteAsync(new MsgStatus<T> { Id = id, Error = new CannotFindPublishStatusException(id) }, cancellationToken);
+                        await channel.Writer.WriteAsync(
+                            new MsgStatus<T>
+                            {
+                                Id = id,
+                                Error = JetStreamPublisherException.CannotFindId(id),
+                            },
+                            cancellationToken);
                         continue;
                     }
 
@@ -115,7 +107,7 @@ public class JetStreamPublisher<T>
                         await channel.Writer.WriteAsync(
                             new MsgStatus<T>
                             {
-                                Error = NoRespondersException.Default,
+                                Error = JetStreamPublisherException.NoResponders,
                                 Id = id,
                                 Subject = msg.Subject,
                                 Data = msg.Data,
@@ -136,7 +128,7 @@ public class JetStreamPublisher<T>
                             await channel.Writer.WriteAsync(
                                 new MsgStatus<T>
                                 {
-                                    Ackowlegment = ack,
+                                    Acknowledgment = ack,
                                     Id = id,
                                     Subject = msg.Subject,
                                     Data = msg.Data,
@@ -150,7 +142,7 @@ public class JetStreamPublisher<T>
                         await channel.Writer.WriteAsync(
                             new MsgStatus<T>
                             {
-                                Error = new NoDataException(id),
+                                Error = JetStreamPublisherException.NoData(id),
                                 Id = id,
                                 Subject = msg.Subject,
                                 Data = msg.Data,
@@ -184,7 +176,7 @@ public class JetStreamPublisher<T>
                             await channel.Writer.WriteAsync(
                                 new MsgStatus<T>
                                 {
-                                    Error = new MessageTimeoutException(m.Id, m.TotalTimeout),
+                                    Error = JetStreamPublisherException.MessageTimeout(m.Id, m.TotalTimeout),
                                     Id = m.Id,
                                     Subject = m.Subject,
                                     Data = m.Data,
@@ -207,8 +199,20 @@ public class JetStreamPublisher<T>
         }
     }
 
+    /// <summary>
+    /// Removes a published message from the internal message tracking system using its unique identifier.
+    /// </summary>
+    /// <param name="id">The unique identifier of the message to be removed.</param>
     public void Remove(long id) => _messages.TryRemove(id, out _);
 
+    /// <summary>
+    /// Publishes a message to the specified subject on NATS JetStream.
+    /// </summary>
+    /// <param name="subject">The subject to which the message is published.</param>
+    /// <param name="data">The message data to be published.</param>
+    /// <param name="headers">Optional headers to include with the message.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation of the publishing operation.</param>
+    /// <returns>The unique identifier of the published message.</returns>
     public async ValueTask<long> PublishAsync(string subject, T data, NatsHeaders? headers = null, CancellationToken cancellationToken = default)
     {
         long id = Interlocked.Increment(ref _id);
@@ -229,31 +233,78 @@ public class JetStreamPublisher<T>
 
         return id;
     }
-}
 
-public class CannotParseSubjectException(string subject) : Exception
-{
-    public string Subject { get; } = subject;
-}
+    /// <summary>
+    /// Represents the status of a message published via the JetStream publisher.
+    /// </summary>
+    /// <typeparam name="TMsg">The type of the data contained in the message.</typeparam>
+    public class MsgStatus<TMsg>
+    {
+        /// <summary>
+        /// Represents the acknowledged status of a message published using the JetStreamPublisher.
+        /// This static instance indicates that a message has been successfully acknowledged
+        /// by the JetStream server during publishing.
+        /// </summary>
+        public static readonly MsgStatus<TMsg> AcknowledgedStatus = new() { Acknowledged = true };
 
-public class CannotFindPublishStatusException(long id) : Exception
-{
-    public long Id { get; } = id;
-}
+        /// <summary>
+        /// Gets a value indicating whether a message published via the JetStreamPublisher has been successfully
+        /// acknowledged by the JetStream server. A value of <c>true</c> signifies successful acknowledgment,
+        /// while <c>false</c> represents that the acknowledgment is either pending or was unsuccessful.
+        /// </summary>
+        public bool Acknowledged { get; init; }
 
-public class NoDataException(long id) : Exception
-{
-    public long Id { get; } = id;
-}
+        /// <summary>
+        /// Gets the unique identifier for a message published using the JetStreamPublisher.
+        /// This property is used to track and correlate messages within the publishing process,
+        /// allowing for efficient acknowledgment handling, removal, and error tracking.
+        /// </summary>
+        public long Id { get; init; }
 
-public class NoRespondersException : Exception
-{
-    public static readonly NoRespondersException Default = new();
-}
+        /// <summary>
+        /// Gets an error encountered during the processing or publishing of a message
+        /// using the JetStream publisher.
+        /// This property holds any <see cref="Exception"/> instance that describes the
+        /// specific error that occurred, such as message parsing failures, no responders,
+        /// timeout exceptions, or other processing issues.
+        /// </summary>
+        public Exception? Error { get; init; }
 
-public class MessageTimeoutException(long id, TimeSpan timeout) : Exception
-{
-    public long Id { get; } = id;
+        /// <summary>
+        /// Gets the acknowledgment response received from the JetStream server for a published message.
+        /// This property contains detailed acknowledgment data, including whether the server successfully
+        /// processed the message.
+        /// </summary>
+        public PubAckResponse? Acknowledgment { get; init; }
 
-    public TimeSpan Timeout { get; } = timeout;
+        /// <summary>
+        /// Gets the subject of a message published or received via the JetStream publisher.
+        /// </summary>
+        public string? Subject { get; init; }
+
+        /// <summary>
+        /// Gets the payload or content of the message handled by the JetStream publisher.
+        /// </summary>
+        public TMsg? Data { get; init; }
+
+        /// <summary>
+        /// Gets the collection of headers associated with a specific message in the JetStreamPublisher.
+        /// </summary>
+        public NatsHeaders? Headers { get; init; }
+    }
+
+    private class Msg<TNsg>
+    {
+        public long Id { get; set; }
+
+        public required string Subject { get; set; }
+
+        public required TNsg Data { get; set; }
+
+        public NatsHeaders? Headers { get; set; }
+
+        public required Stopwatch Published { get; set; }
+
+        public TimeSpan TotalTimeout { get; set; } = TimeSpan.Zero;
+    }
 }
