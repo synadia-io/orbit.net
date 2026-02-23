@@ -21,14 +21,14 @@ public static class ParameterizedSubjectExtensions
 #if NET9_0_OR_GREATER
     /// <summary>
     /// Parameterizes a NATS subject by replacing '?' placeholders with sanitized values.
-    /// Example: "user.login.?.event.?".Parameterize("john", "click") → "user.login.john.event.click".
+    /// Example: "user.login.?.event.?".ToNatsSubject("john", "click") → "user.login.john.event.click".
     /// </summary>
     /// <param name="subjectTemplate">The subject template containing '?' placeholders.</param>
     /// <param name="parameters">Values to replace each '?' in order.</param>
     /// <returns>A safe, valid NATS subject.</returns>
     /// <exception cref="ArgumentNullException">If subjectTemplate is null.</exception>
     /// <exception cref="ArgumentException">If subjectTemplate contains whitespace, or parameter count doesn't match placeholder count.</exception>
-    public static string Parameterize(this string subjectTemplate, params ReadOnlySpan<string?> parameters)
+    public static string ToNatsSubject(this string subjectTemplate, params ReadOnlySpan<string?> parameters)
     {
         ArgumentNullException.ThrowIfNull(subjectTemplate);
 
@@ -42,14 +42,14 @@ public static class ParameterizedSubjectExtensions
 
     /// <summary>
     /// Parameterizes a NATS subject by replacing '?' placeholders with sanitized values.
-    /// Example: "user.login.?.event.?".Parameterize("john", "click") → "user.login.john.event.click".
+    /// Example: "user.login.?.event.?".ToNatsSubject("john", "click") → "user.login.john.event.click".
     /// </summary>
     /// <param name="subjectTemplate">The subject template containing '?' placeholders.</param>
     /// <param name="parameters">Values to replace each '?' in order.</param>
     /// <returns>A safe, valid NATS subject.</returns>
     /// <exception cref="ArgumentNullException">If subjectTemplate or parameters is null.</exception>
     /// <exception cref="ArgumentException">If subjectTemplate contains whitespace, or parameter count doesn't match placeholder count.</exception>
-    public static string Parameterize(this string subjectTemplate, params string?[] parameters)
+    public static string ToNatsSubject(this string subjectTemplate, params string?[] parameters)
     {
         ArgumentNullException.ThrowIfNull(subjectTemplate);
         ArgumentNullException.ThrowIfNull(parameters);
@@ -64,14 +64,14 @@ public static class ParameterizedSubjectExtensions
 #elif NETSTANDARD2_0
     /// <summary>
     /// Parameterizes a NATS subject by replacing '?' placeholders with sanitized values.
-    /// Example: "user.login.?.event.?".Parameterize("john", "click") → "user.login.john.event.click".
+    /// Example: "user.login.?.event.?".ToNatsSubject("john", "click") → "user.login.john.event.click".
     /// </summary>
     /// <param name="subjectTemplate">The subject template containing '?' placeholders.</param>
     /// <param name="parameters">Values to replace each '?' in order.</param>
     /// <returns>A safe, valid NATS subject.</returns>
     /// <exception cref="ArgumentNullException">If subjectTemplate or parameters is null.</exception>
     /// <exception cref="ArgumentException">If subjectTemplate contains whitespace, or parameter count doesn't match placeholder count.</exception>
-    public static string Parameterize(this string subjectTemplate, params string?[] parameters)
+    public static string ToNatsSubject(this string subjectTemplate, params string?[] parameters)
     {
         if (subjectTemplate == null)
         {
@@ -93,14 +93,14 @@ public static class ParameterizedSubjectExtensions
 #else
     /// <summary>
     /// Parameterizes a NATS subject by replacing '?' placeholders with sanitized values.
-    /// Example: "user.login.?.event.?".Parameterize("john", "click") → "user.login.john.event.click".
+    /// Example: "user.login.?.event.?".ToNatsSubject("john", "click") → "user.login.john.event.click".
     /// </summary>
     /// <param name="subjectTemplate">The subject template containing '?' placeholders.</param>
     /// <param name="parameters">Values to replace each '?' in order.</param>
     /// <returns>A safe, valid NATS subject.</returns>
     /// <exception cref="ArgumentNullException">If subjectTemplate or parameters is null.</exception>
     /// <exception cref="ArgumentException">If subjectTemplate contains whitespace, or parameter count doesn't match placeholder count.</exception>
-    public static string Parameterize(this string subjectTemplate, params string?[] parameters)
+    public static string ToNatsSubject(this string subjectTemplate, params string?[] parameters)
     {
         ArgumentNullException.ThrowIfNull(subjectTemplate);
         ArgumentNullException.ThrowIfNull(parameters);
@@ -122,7 +122,7 @@ public static class ParameterizedSubjectExtensions
     /// <param name="value">The value to validate.</param>
     /// <exception cref="ArgumentNullException">If <paramref name="value"/> is null.</exception>
     /// <exception cref="ArgumentException">If the value contains space, \t, \r, or \n.</exception>
-    public static void EnsureSanitized(this string? value)
+    public static void EnsureValidNatsSubject(this string? value)
     {
 #if NETSTANDARD
         if (value == null)
