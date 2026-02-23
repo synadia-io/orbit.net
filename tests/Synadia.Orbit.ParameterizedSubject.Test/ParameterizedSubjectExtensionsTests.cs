@@ -90,6 +90,66 @@ public class ParameterizedSubjectExtensionsTests
         Assert.Equal("pre.AB.post", actual);
     }
 
+    [Fact]
+    public void Parameterize_NullTemplate_ThrowsArgumentNullException()
+    {
+        string? template = null;
+        Assert.Throws<ArgumentNullException>(() => template!.Parameterize("x"));
+    }
+
+    [Fact]
+    public void Parameterize_EntireTemplateIsSinglePlaceholder()
+    {
+        string actual = "?".Parameterize("value");
+        Assert.Equal("value", actual);
+    }
+
+    [Fact]
+    public void Parameterize_AllPlaceholdersNoLiteralText()
+    {
+        string actual = "?.?.?".Parameterize("a", "b", "c");
+        Assert.Equal("a.b.c", actual);
+    }
+
+    [Fact]
+    public void Parameterize_TwoConsecutivePlaceholdersOnly()
+    {
+        string actual = "??".Parameterize("x", "y");
+        Assert.Equal("xy", actual);
+    }
+
+    [Theory]
+    [InlineData(" ", "%20")]
+    [InlineData("\t", "%09")]
+    [InlineData("\r", "%0D")]
+    [InlineData("\n", "%0A")]
+    [InlineData(".", "%2E")]
+    [InlineData("*", "%2A")]
+    [InlineData(">", "%3E")]
+    [InlineData("%", "%25")]
+    public void Parameterize_EncodesEachSpecialCharacterIndividually(string input, string expected)
+    {
+        string actual = "a.?".Parameterize(input);
+        Assert.Equal($"a.{expected}", actual);
+    }
+
+    [Fact]
+    public void Parameterize_LongInput_ExceedsStackAllocThreshold()
+    {
+        var longParam = new string('x', 300);
+        string actual = "prefix.?".Parameterize(longParam);
+        Assert.Equal($"prefix.{longParam}", actual);
+    }
+
+    [Fact]
+    public void Parameterize_LongInputRequiringEncoding_ExceedsStackAllocThreshold()
+    {
+        var longParam = new string('.', 100);
+        var expectedEncoded = string.Concat(Enumerable.Repeat("%2E", 100));
+        string actual = "prefix.?".Parameterize(longParam);
+        Assert.Equal($"prefix.{expectedEncoded}", actual);
+    }
+
     // === EnsureSanitized tests ===
     [Theory]
     [InlineData("abc")]
@@ -110,6 +170,13 @@ public class ParameterizedSubjectExtensionsTests
     {
         var ex = Assert.Throws<ArgumentException>(input.EnsureSanitized);
         Assert.Contains("Value cannot contain", ex.Message);
+    }
+
+    [Fact]
+    public void EnsureSanitized_EmptyString_DoesNotThrow()
+    {
+        var ex = Record.Exception(string.Empty.EnsureSanitized);
+        Assert.Null(ex);
     }
 
     [Fact]

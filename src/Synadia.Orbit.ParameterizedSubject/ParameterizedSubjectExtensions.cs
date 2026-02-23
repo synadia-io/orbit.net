@@ -1,8 +1,11 @@
 ﻿// Copyright (c) Synadia Communications, Inc. All rights reserved.
 // Licensed under the Apache License, Version 2.0.
 
+#if NETSTANDARD2_0
 using System.Text;
-using System.Text.RegularExpressions;
+#else
+using System.Buffers;
+#endif
 
 namespace Synadia.Orbit.ParameterizedSubject;
 
@@ -11,11 +14,31 @@ namespace Synadia.Orbit.ParameterizedSubject;
 /// </summary>
 public static class ParameterizedSubjectExtensions
 {
-    // Characters that must be URL-encoded when appearing in subject tokens
-    private static readonly HashSet<char> CharsRequiringEscape = [' ', '\t', '\r', '\n', '>', '*', '.', '%'];
+#if !NETSTANDARD2_0
+    private const int StackAllocThreshold = 256;
+#endif
 
-    // Regex to detect invalid control characters in subject template
-    private static readonly Regex InvalidSubjectChars = new(@"[\s\r\n]", RegexOptions.Compiled);
+#if NET9_0_OR_GREATER
+    /// <summary>
+    /// Parameterizes a NATS subject by replacing '?' placeholders with sanitized values.
+    /// Example: "user.login.?.event.?".Parameterize("john", "click") → "user.login.john.event.click".
+    /// </summary>
+    /// <param name="subjectTemplate">The subject template containing '?' placeholders.</param>
+    /// <param name="parameters">Values to replace each '?' in order.</param>
+    /// <returns>A safe, valid NATS subject.</returns>
+    /// <exception cref="ArgumentNullException">If subjectTemplate is null.</exception>
+    /// <exception cref="ArgumentException">If subjectTemplate contains whitespace, or parameter count doesn't match placeholder count.</exception>
+    public static string Parameterize(this string subjectTemplate, params ReadOnlySpan<string?> parameters)
+    {
+        ArgumentNullException.ThrowIfNull(subjectTemplate);
+
+        if (ValidateAndCountPlaceholders(subjectTemplate, parameters.Length) == 0)
+        {
+            return subjectTemplate;
+        }
+
+        return ParameterizeCore(subjectTemplate, parameters);
+    }
 
     /// <summary>
     /// Parameterizes a NATS subject by replacing '?' placeholders with sanitized values.
@@ -25,10 +48,31 @@ public static class ParameterizedSubjectExtensions
     /// <param name="parameters">Values to replace each '?' in order.</param>
     /// <returns>A safe, valid NATS subject.</returns>
     /// <exception cref="ArgumentNullException">If subjectTemplate or parameters is null.</exception>
-    /// <exception cref="ArgumentException">If subjectTemplate contains \r or \n, or parameter count doesn't match placeholder count.</exception>
+    /// <exception cref="ArgumentException">If subjectTemplate contains whitespace, or parameter count doesn't match placeholder count.</exception>
     public static string Parameterize(this string subjectTemplate, params string?[] parameters)
     {
-#if NETSTANDARD
+        ArgumentNullException.ThrowIfNull(subjectTemplate);
+        ArgumentNullException.ThrowIfNull(parameters);
+
+        if (ValidateAndCountPlaceholders(subjectTemplate, parameters.Length) == 0)
+        {
+            return subjectTemplate;
+        }
+
+        return ParameterizeCore(subjectTemplate, (ReadOnlySpan<string?>)parameters);
+    }
+#elif NETSTANDARD2_0
+    /// <summary>
+    /// Parameterizes a NATS subject by replacing '?' placeholders with sanitized values.
+    /// Example: "user.login.?.event.?".Parameterize("john", "click") → "user.login.john.event.click".
+    /// </summary>
+    /// <param name="subjectTemplate">The subject template containing '?' placeholders.</param>
+    /// <param name="parameters">Values to replace each '?' in order.</param>
+    /// <returns>A safe, valid NATS subject.</returns>
+    /// <exception cref="ArgumentNullException">If subjectTemplate or parameters is null.</exception>
+    /// <exception cref="ArgumentException">If subjectTemplate contains whitespace, or parameter count doesn't match placeholder count.</exception>
+    public static string Parameterize(this string subjectTemplate, params string?[] parameters)
+    {
         if (subjectTemplate == null)
         {
             throw new ArgumentNullException(nameof(subjectTemplate));
@@ -38,61 +82,37 @@ public static class ParameterizedSubjectExtensions
         {
             throw new ArgumentNullException(nameof(parameters));
         }
+
+        if (ValidateAndCountPlaceholders(subjectTemplate, parameters.Length) == 0)
+        {
+            return subjectTemplate;
+        }
+
+        return ParameterizeSb(subjectTemplate, parameters);
+    }
 #else
+    /// <summary>
+    /// Parameterizes a NATS subject by replacing '?' placeholders with sanitized values.
+    /// Example: "user.login.?.event.?".Parameterize("john", "click") → "user.login.john.event.click".
+    /// </summary>
+    /// <param name="subjectTemplate">The subject template containing '?' placeholders.</param>
+    /// <param name="parameters">Values to replace each '?' in order.</param>
+    /// <returns>A safe, valid NATS subject.</returns>
+    /// <exception cref="ArgumentNullException">If subjectTemplate or parameters is null.</exception>
+    /// <exception cref="ArgumentException">If subjectTemplate contains whitespace, or parameter count doesn't match placeholder count.</exception>
+    public static string Parameterize(this string subjectTemplate, params string?[] parameters)
+    {
         ArgumentNullException.ThrowIfNull(subjectTemplate);
         ArgumentNullException.ThrowIfNull(parameters);
-#endif
 
-        // Validate subject template has no \s, \r or \n
-        if (InvalidSubjectChars.IsMatch(subjectTemplate))
+        if (ValidateAndCountPlaceholders(subjectTemplate, parameters.Length) == 0)
         {
-            throw new ArgumentException("Subject template cannot contain space (\\s), carriage return (\\r) or line feed (\\n) characters.", nameof(subjectTemplate));
+            return subjectTemplate;
         }
 
-        // Count number of '?' placeholders
-        int placeholderCount = subjectTemplate.Count(c => c == '?');
-
-        if (placeholderCount != parameters.Length)
-        {
-            throw new ArgumentException($"Subject template contains {placeholderCount} placeholder(s), but {parameters.Length} parameter(s) were provided.");
-        }
-
-        if (placeholderCount == 0)
-        {
-            return subjectTemplate; // No parameterization needed
-        }
-
-        var resultParts = new List<string>();
-        int paramIndex = 0;
-        int start = 0;
-
-        // Split and replace each '?'
-        for (int i = 0; i < subjectTemplate.Length; i++)
-        {
-            if (subjectTemplate[i] == '?')
-            {
-                // Add part before the '?'
-                if (i > start)
-                {
-                    resultParts.Add(subjectTemplate.Substring(start, i - start));
-                }
-
-                // Sanitize the parameter: URL-encode unsafe chars
-                string sanitizedParam = SanitizeParameter(parameters[paramIndex++]);
-
-                resultParts.Add(sanitizedParam);
-                start = i + 1;
-            }
-        }
-
-        // Add remaining part after last '?'
-        if (start < subjectTemplate.Length)
-        {
-            resultParts.Add(subjectTemplate.Substring(start));
-        }
-
-        return string.Join(string.Empty, resultParts);
+        return ParameterizeCore(subjectTemplate, (ReadOnlySpan<string?>)parameters);
     }
+#endif
 
     /// <summary>
     /// Ensures the provided value contains none of the disallowed whitespace characters for NATS subject tokens:
@@ -113,45 +133,185 @@ public static class ParameterizedSubjectExtensions
         ArgumentNullException.ThrowIfNull(value);
 #endif
 
-        // Only check for these characters explicitly as requested: space, tab, CR, LF
         if (value.IndexOfAny([' ', '\t', '\r', '\n']) >= 0)
         {
             throw new ArgumentException("Value cannot contain space (\\s), tab (\\t), carriage return (\\r), or line feed (\\n) characters.", nameof(value));
         }
     }
 
-    /// <summary>
-    /// Sanitizes a parameter value by URL-encoding characters that could break subject syntax
-    /// or be used for injection: space, \t, \r, \n, >, *, full-stop, %.
-    /// </summary>
-    private static string SanitizeParameter(string? value)
+    private static int ValidateAndCountPlaceholders(string subjectTemplate, int parameterCount)
+    {
+        if (subjectTemplate.IndexOfAny([' ', '\t', '\r', '\n']) >= 0)
+        {
+            throw new ArgumentException("Subject template cannot contain space (\\s), carriage return (\\r) or line feed (\\n) characters.", nameof(subjectTemplate));
+        }
+
+        int placeholderCount = 0;
+        foreach (char t in subjectTemplate)
+        {
+            if (t == '?')
+            {
+                placeholderCount++;
+            }
+        }
+
+        if (placeholderCount != parameterCount)
+        {
+            throw new ArgumentException($"Subject template contains {placeholderCount} placeholder(s), but {parameterCount} parameter(s) were provided.");
+        }
+
+        return placeholderCount;
+    }
+
+#if NETSTANDARD2_0
+    private static string ParameterizeSb(string subjectTemplate, string?[] parameters)
+    {
+        var sb = new StringBuilder(subjectTemplate.Length);
+        int paramIndex = 0;
+        int start = 0;
+
+        for (int i = 0; i < subjectTemplate.Length; i++)
+        {
+            if (subjectTemplate[i] == '?')
+            {
+                if (i > start)
+                {
+                    sb.Append(subjectTemplate, start, i - start);
+                }
+
+                AppendSanitizedSb(sb, parameters[paramIndex++]);
+                start = i + 1;
+            }
+        }
+
+        if (start < subjectTemplate.Length)
+        {
+            sb.Append(subjectTemplate, start, subjectTemplate.Length - start);
+        }
+
+        return sb.ToString();
+    }
+
+    private static void AppendSanitizedSb(StringBuilder sb, string? value)
     {
         if (string.IsNullOrEmpty(value))
         {
-            return value ?? string.Empty;
+            return;
         }
 
-        // Fast path: if no dangerous chars, return as-is
-        if (!value.Any(c => CharsRequiringEscape.Contains(c)))
+        for (int i = 0; i < value!.Length; i++)
         {
-            return value ?? string.Empty;
-        }
-
-        // This ensures tokens remain readable when possible, but safe
-        var encoded = new StringBuilder();
-        foreach (char c in value ?? string.Empty)
-        {
-            if (CharsRequiringEscape.Contains(c))
+            char c = value[i];
+            switch (c)
             {
-                encoded.Append('%');
-                encoded.Append(((int)c).ToString("X2"));
-            }
-            else
-            {
-                encoded.Append(c);
+                case ' ':
+                case '\t':
+                case '\r':
+                case '\n':
+                case '>':
+                case '*':
+                case '.':
+                case '%':
+                    sb.Append('%');
+                    sb.Append(((int)c).ToString("X2"));
+                    break;
+                default:
+                    sb.Append(c);
+                    break;
             }
         }
-
-        return encoded.ToString();
     }
+#else
+    private static string ParameterizeCore(string subjectTemplate, ReadOnlySpan<string?> parameters)
+    {
+        int maxLen = subjectTemplate.Length;
+        foreach (string? t in parameters)
+        {
+            maxLen += (t?.Length ?? 0) * 3;
+        }
+
+        char[]? rented = null;
+        Span<char> buffer = maxLen <= StackAllocThreshold
+            ? stackalloc char[StackAllocThreshold]
+            : (rented = ArrayPool<char>.Shared.Rent(maxLen));
+
+        try
+        {
+            int written = 0;
+            int paramIndex = 0;
+            int start = 0;
+
+            for (int i = 0; i < subjectTemplate.Length; i++)
+            {
+                if (subjectTemplate[i] == '?')
+                {
+                    if (i > start)
+                    {
+                        subjectTemplate.AsSpan(start, i - start).CopyTo(buffer[written..]);
+                        written += i - start;
+                    }
+
+                    written += WriteSanitized(buffer[written..], parameters[paramIndex++]);
+                    start = i + 1;
+                }
+            }
+
+            if (start < subjectTemplate.Length)
+            {
+                subjectTemplate.AsSpan(start).CopyTo(buffer[written..]);
+                written += subjectTemplate.Length - start;
+            }
+
+            return new string(buffer[..written]);
+        }
+        finally
+        {
+            if (rented != null)
+            {
+                ArrayPool<char>.Shared.Return(rented);
+            }
+        }
+    }
+
+    private static int WriteSanitized(Span<char> dest, string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return 0;
+        }
+
+        int written = 0;
+        foreach (char c in value)
+        {
+            switch (c)
+            {
+                case ' ':
+                case '\t':
+                case '\r':
+                case '\n':
+                case '>':
+                case '*':
+                case '.':
+                case '%':
+                    dest[written++] = '%';
+                    WriteTwoHexDigits(dest[written..], (byte)c);
+                    written += 2;
+                    break;
+                default:
+                    dest[written++] = c;
+                    break;
+            }
+        }
+
+        return written;
+    }
+
+    private static void WriteTwoHexDigits(Span<char> dest, byte value)
+    {
+        int hi = value >> 4;
+        int lo = value & 0xF;
+        dest[0] = (char)(hi < 10 ? '0' + hi : 'A' + hi - 10);
+        dest[1] = (char)(lo < 10 ? '0' + lo : 'A' + lo - 10);
+    }
+#endif
 }
