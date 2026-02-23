@@ -170,7 +170,7 @@ public static class ParameterizedSubjectExtensions
 
         if (value.AsSpan().IndexOfAny(WhitespaceChars) >= 0)
         {
-            throw new ArgumentException("Value cannot contain space (\\s), tab (\\t), carriage return (\\r), or line feed (\\n) characters.", nameof(value));
+            throw new ArgumentException("Value cannot contain space, tab (\\t), carriage return (\\r), or line feed (\\n) characters.", nameof(value));
         }
     }
 
@@ -178,7 +178,7 @@ public static class ParameterizedSubjectExtensions
     {
         if (subjectTemplate.AsSpan().IndexOfAny(WhitespaceChars) >= 0)
         {
-            throw new ArgumentException("Subject template cannot contain space (\\s), carriage return (\\r) or line feed (\\n) characters.", nameof(subjectTemplate));
+            throw new ArgumentException("Subject template cannot contain space, tab (\\t), carriage return (\\r), or line feed (\\n) characters.", nameof(subjectTemplate));
         }
 
         int placeholderCount = 0;
