@@ -36,12 +36,32 @@ await foreach (NatsMsg<int> msg in js.GetBatchDirectAsync<int>(name, request, ca
 
 Assert.Equal(8, count);
 ```
-## Single Scheduled Message
+## Scheduled Messages
 
 A stream can be configured to allow scheduled messages. A scheduled message is a message published
-to a subject that will in turn publish the message to a target subject at a specified time in the future.
-See also [ADR-51: Single scheduled message](https://github.com/nats-io/nats-architecture-and-design/blob/main/adr/ADR-51.md#single-scheduled-message)
-for more details. This feature requires NATS Server 2.12 or later.
+to a subject that will in turn publish the message to a target subject at a specified time or on a
+repeating interval. See [ADR-51](https://github.com/nats-io/nats-architecture-and-design/blob/main/adr/ADR-51.md)
+for the full specification. The stream must have `AllowMsgSchedules = true`.
+
+> **Server requirement:** Features marked 2.14+ are not yet released. To test them, install the
+> server from main (requires [Go](https://go.dev/dl/)):
+> ```bash
+> go install github.com/nats-io/nats-server/v2@main
+> ```
+
+| Use case | Constructor | Source | Server version |
+|----------|-------------|--------|----------------|
+| Delayed publish | `NatsMsgSchedule(DateTimeOffset, target)` | null | 2.12+ |
+| Recurring publish | `NatsMsgSchedule(TimeSpan, target)` | null | 2.14+ |
+| Data sampling | `NatsMsgSchedule(TimeSpan, target) { Source = ... }` | set | 2.14+ |
+
+> **Note:** Cron expressions and timezone support are defined in ADR-51 but not yet implemented
+> in the server. The `NatsMsgSchedule(string, string)` raw constructor is available for forward
+> compatibility with future schedule types.
+
+### Delayed Publish (NATS Server 2.12+)
+
+Use `@at` to deliver a message once at a future time:
 
 ```csharp
 // dotnet add package nats.net
@@ -49,7 +69,6 @@ for more details. This feature requires NATS Server 2.12 or later.
 await using var client = new NatsClient();
 var js = client.CreateJetStreamContext();
 
-Console.WriteLine("Create stream");
 var stream = await js.CreateStreamAsync(new StreamConfig("SCHEDULING_STREAM", ["scheduling.>", "events.>"])
 {
     AllowMsgSchedules = true,
@@ -60,10 +79,8 @@ var stream = await js.CreateStreamAsync(new StreamConfig("SCHEDULING_STREAM", ["
 var scheduleAt = DateTimeOffset.UtcNow.AddSeconds(10);
 var schedule = new NatsMsgSchedule(scheduleAt, "events.it_is_time")
 {
-    Ttl = TimeSpan.FromSeconds(15), // Optional
+    Ttl = TimeSpan.FromSeconds(15), // Optional: TTL on the produced message
 };
-
-Console.WriteLine($"Scheduling message for: {scheduleAt:yyyy-MM-ddTHH:mm:ss}Z");
 
 var ack = await js.PublishScheduledAsync(
     subject: "scheduling.check_later",
@@ -71,6 +88,71 @@ var ack = await js.PublishScheduledAsync(
     schedule: schedule);
 
 ack.EnsureSuccess();
-Console.WriteLine($"Published scheduled message, seq={ack.Seq}");
 ```
+
+### Recurring Publish (NATS Server 2.14+)
+
+Use the `TimeSpan` constructor for repeating schedules (minimum interval is 1 second):
+
+```csharp
+var schedule = new NatsMsgSchedule(TimeSpan.FromMinutes(5), "events.periodic_check");
+
+var ack = await js.PublishScheduledAsync(
+    subject: "scheduling.repeater",
+    data: "periodic payload",
+    schedule: schedule);
+
+ack.EnsureSuccess();
+```
+
+### Data Sampling with Source (NATS Server 2.14+)
+
+Combine a repeating schedule with a source subject to periodically republish the latest message
+from one subject to another. When the schedule fires, it sources the latest message's data and
+headers from the source subject and publishes them to the target.
+
+```csharp
+var stream = await js.CreateStreamAsync(new StreamConfig("SENSORS", ["sensors.*"])
+{
+    AllowMsgSchedules = true,
+    AllowMsgTTL = true,
+});
+
+// Sensor data is published to sensors.raw by some producer
+// ...
+
+// Sample the latest sensor reading every 5 minutes
+var schedule = new NatsMsgSchedule(TimeSpan.FromMinutes(5), "sensors.sampled")
+{
+    Source = "sensors.raw",
+    Ttl = TimeSpan.FromMinutes(6),
+};
+
+var ack = await js.PublishScheduledAsync("sensors.schedule", schedule);
+
+ack.EnsureSuccess();
+// Every 5 minutes the server will:
+//   1. Load the latest message from sensors.raw
+//   2. Publish its data + headers to sensors.sampled
+//   3. Add Nats-Scheduler and Nats-Schedule-Next headers
+```
+
+The source subject must be a literal (no wildcards) and must not match the schedule or target
+subjects. If no message exists on the source subject when the schedule fires, the schedule is
+removed without producing a message.
+
+Source also works with one-shot `@at` schedules for a single delayed republish:
+
+```csharp
+var schedule = new NatsMsgSchedule(DateTimeOffset.UtcNow.AddMinutes(10), "sensors.snapshot")
+{
+    Source = "sensors.raw",
+};
+```
+
+### TTL Options
+
+- Minimum TTL is 1 second
+- Use `TimeSpan.MaxValue` to indicate the produced message should never expire (`"never"`)
+- The stream must have `AllowMsgTTL = true` when using TTL
 
