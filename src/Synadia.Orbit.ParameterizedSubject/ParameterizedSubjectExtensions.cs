@@ -18,6 +18,12 @@ public static class ParameterizedSubjectExtensions
     private const int StackAllocThreshold = 256;
 #endif
 
+#if NET8_0_OR_GREATER
+    private static readonly SearchValues<char> WhitespaceChars = SearchValues.Create([' ', '\t', '\r', '\n']);
+#else
+    private static readonly char[] WhitespaceChars = [' ', '\t', '\r', '\n'];
+#endif
+
 #if NET9_0_OR_GREATER
     /// <summary>
     /// Parameterizes a NATS subject by replacing '?' placeholders with sanitized values.
@@ -90,6 +96,35 @@ public static class ParameterizedSubjectExtensions
 
         return ParameterizeSb(subjectTemplate, parameters);
     }
+#elif NETSTANDARD2_1
+    /// <summary>
+    /// Parameterizes a NATS subject by replacing '?' placeholders with sanitized values.
+    /// Example: "user.login.?.event.?".ToNatsSubject("john", "click") → "user.login.john.event.click".
+    /// </summary>
+    /// <param name="subjectTemplate">The subject template containing '?' placeholders.</param>
+    /// <param name="parameters">Values to replace each '?' in order.</param>
+    /// <returns>A safe, valid NATS subject.</returns>
+    /// <exception cref="ArgumentNullException">If subjectTemplate or parameters is null.</exception>
+    /// <exception cref="ArgumentException">If subjectTemplate contains whitespace, or parameter count doesn't match placeholder count.</exception>
+    public static string ToNatsSubject(this string subjectTemplate, params string?[] parameters)
+    {
+        if (subjectTemplate == null)
+        {
+            throw new ArgumentNullException(nameof(subjectTemplate));
+        }
+
+        if (parameters == null)
+        {
+            throw new ArgumentNullException(nameof(parameters));
+        }
+
+        if (ValidateAndCountPlaceholders(subjectTemplate, parameters.Length) == 0)
+        {
+            return subjectTemplate;
+        }
+
+        return ParameterizeCore(subjectTemplate, (ReadOnlySpan<string?>)parameters);
+    }
 #else
     /// <summary>
     /// Parameterizes a NATS subject by replacing '?' placeholders with sanitized values.
@@ -133,7 +168,7 @@ public static class ParameterizedSubjectExtensions
         ArgumentNullException.ThrowIfNull(value);
 #endif
 
-        if (value.IndexOfAny([' ', '\t', '\r', '\n']) >= 0)
+        if (value.AsSpan().IndexOfAny(WhitespaceChars) >= 0)
         {
             throw new ArgumentException("Value cannot contain space (\\s), tab (\\t), carriage return (\\r), or line feed (\\n) characters.", nameof(value));
         }
@@ -141,7 +176,7 @@ public static class ParameterizedSubjectExtensions
 
     private static int ValidateAndCountPlaceholders(string subjectTemplate, int parameterCount)
     {
-        if (subjectTemplate.IndexOfAny([' ', '\t', '\r', '\n']) >= 0)
+        if (subjectTemplate.AsSpan().IndexOfAny(WhitespaceChars) >= 0)
         {
             throw new ArgumentException("Subject template cannot contain space (\\s), carriage return (\\r) or line feed (\\n) characters.", nameof(subjectTemplate));
         }

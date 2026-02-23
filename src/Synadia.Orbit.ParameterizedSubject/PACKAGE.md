@@ -1,14 +1,18 @@
-﻿# Synadia.Orbit.ParameterizedSubject
+# Synadia.Orbit.ParameterizedSubject [EXPERIMENTAL]
+
+> **This package is experimental.** It is not part of the official NATS ecosystem and is published
+> exclusively in Orbit .NET to gauge interest and address community requests. The API may change
+> or the package may be removed in a future release.
 
 Small, dependency-free helpers for building safe, parameterized NATS subjects.
 
-This package provides the extension method `string Parameterize(params string[] parameters)` that replaces `?` placeholders in a subject template with sanitized values so they are always valid NATS subject tokens.
+This package provides the extension method `string ToNatsSubject(params string[] parameters)` that replaces `?` placeholders in a subject template with sanitized values so they are always valid NATS subject tokens.
 
 ## Why
 
 NATS subjects forbid whitespace and certain characters in tokens. When subjects are composed from dynamic input (user IDs, versions, etc.), you must sanitize values to prevent invalid subjects or injection via wildcard characters like `*` and `>`.
 
-`ParameterizedSubjectExtensions.Parameterize` makes this simple and consistent:
+`ParameterizedSubjectExtensions.ToNatsSubject` makes this simple and consistent:
 
 - Replace each `?` in the template with a value you supply
 - Sanitize unsafe characters by percent-encoding them
@@ -23,21 +27,21 @@ Install from NuGet:
 dotnet add package Synadia.Orbit.ParameterizedSubject
 ```
 
-Target frameworks: `netstandard2.0`, `netstandard2.1`, `net8.0`, `net9.0`.
+Target frameworks: `netstandard2.0`, `netstandard2.1`, `net8.0`, `net9.0`, `net10.0`.
 
 ## Quick start
 
 ```csharp
 using Synadia.Orbit.ParameterizedSubject;
 
-var subject = "users.?.events.?".Parameterize("alice", "login");
+var subject = "users.?.events.?".ToNatsSubject("alice", "login");
 // => "users.alice.events.login"
 ```
 
 Adjacent placeholders are allowed and simply concatenate:
 
 ```csharp
-var s = "pre.??.post".Parameterize("A", "B");
+var s = "pre.??.post".ToNatsSubject("A", "B");
 // => "pre.AB.post"
 ```
 
@@ -66,19 +70,19 @@ To keep subjects valid and prevent wildcard injection, the following characters 
 Example:
 
 ```csharp
-var s = "files.?".Parameterize("v1.2");
+var s = "files.?".ToNatsSubject("v1.2");
 // => "files.v1%2E2"
 
-var s2 = "a.?".Parameterize("x*y>z%");
+var s2 = "a.?".ToNatsSubject("x*y>z%");
 // => "a.x%2Ay%3Ez%25"
 ```
 
 ## Template validation
 
-Subject templates themselves must not contain whitespace or newlines. If the template matches `\s`, `\r`, or `\n`, the method throws an `ArgumentException`:
+Subject templates themselves must not contain whitespace or newlines. If the template contains space, tab, `\r`, or `\n`, the method throws an `ArgumentException`:
 
 ```csharp
-"a b.?".Parameterize("x"); // throws
+"a b.?".ToNatsSubject("x"); // throws
 ```
 
 ## API
@@ -89,11 +93,11 @@ namespace Synadia.Orbit.ParameterizedSubject
     public static class ParameterizedSubjectExtensions
     {
         // Replaces '?' in subjectTemplate with sanitized parameters in order.
-        public static string Parameterize(this string subjectTemplate, params string[] parameters);
+        public static string ToNatsSubject(this string subjectTemplate, params string[] parameters);
 
         // Validates a value contains no space, tab (\t), carriage return (\r), or line feed (\n).
         // Throws ArgumentNullException when value is null; ArgumentException when any of those characters are present.
-        public static void EnsureSanitized(this string value);
+        public static void EnsureValidNatsSubject(this string value);
     }
 }
 ```
@@ -103,37 +107,79 @@ Exceptions:
 - `ArgumentException` when the template contains whitespace/CR/LF.
 - `ArgumentException` when placeholder and parameter counts differ.
 
-For `EnsureSanitized` specifically:
+For `EnsureValidNatsSubject` specifically:
 - `ArgumentNullException` when `value` is `null`.
 - `ArgumentException` when `value` contains space, `\t`, `\r`, or `\n`.
 
-### EnsureSanitized usage
+### EnsureValidNatsSubject usage
 
-Use `EnsureSanitized` when you only need to validate inputs (without transforming them) to guarantee they are safe as NATS subject tokens with respect to whitespace:
+Use `EnsureValidNatsSubject` when you only need to validate inputs (without transforming them) to guarantee they are safe as NATS subject tokens with respect to whitespace:
 
 ```csharp
 using Synadia.Orbit.ParameterizedSubject;
 
-"ok".EnsureSanitized();           // no throw
-"v1.2".EnsureSanitized();        // no throw
-"has space".EnsureSanitized();   // throws ArgumentException
+"ok".EnsureValidNatsSubject();           // no throw
+"v1.2".EnsureValidNatsSubject();        // no throw
+"has space".EnsureValidNatsSubject();   // throws ArgumentException
 ```
 
-## Testing
+## Algorithm
 
-The repository includes an xUnit test suite that exercises:
+`ToNatsSubject` processes the template in a single left-to-right pass:
 
-- Basic replacement (single/multiple, leading/trailing, consecutive placeholders)
-- Mismatch count errors and validation messages
-- Template whitespace validation
-- Parameter sanitization for all encoded characters
-- Null and empty parameter handling
+1. **Validate template** — reject if it contains any whitespace (`space`, `\t`, `\r`, `\n`).
+2. **Count placeholders** — count `?` characters in the template. Reject if the count does not match the number of supplied parameters. If zero, return the template unchanged.
+3. **Build result** — walk the template character by character:
+   - Copy literal characters (non-`?`) to the output.
+   - For each `?`, consume the next parameter and append its characters to the output, percent-encoding unsafe characters as `%XX` (two uppercase hex digits).
+4. **Return** the assembled string.
+
+### Encoded characters
+
+| Character | Reason | Encoding |
+|-----------|--------|----------|
+| `%` | Escape character itself (encode first to avoid double-encoding) | `%25` |
+| `.` | NATS token separator | `%2E` |
+| `*` | NATS wildcard (single token) | `%2A` |
+| `>` | NATS wildcard (tail match) | `%3E` |
+| ` ` | Invalid in NATS subjects | `%20` |
+| `\t` | Invalid in NATS subjects | `%09` |
+| `\r` | Invalid in NATS subjects | `%0D` |
+| `\n` | Invalid in NATS subjects | `%0A` |
+
+All other characters pass through unmodified.
+
+## Performance
+
+`ToNatsSubject` is designed to add safety with minimal allocation overhead. On modern .NET targets, the only heap allocation is the output string itself — matching raw string interpolation.
+
+Key optimizations by target framework:
+
+| Target | Optimization |
+|--------|-------------|
+| `net9.0`+ | `params ReadOnlySpan<string?>` eliminates the `params` array allocation |
+| `net8.0`+ | `SearchValues<char>` for SIMD-accelerated whitespace detection |
+| `netstandard2.1`+, `net8.0`+ | `stackalloc` + `Span<char>` with `ArrayPool` fallback for zero-alloc string building |
+| `netstandard2.0` | `StringBuilder`-based fallback for broad compatibility |
+
+### vs. manual sanitization
+
+Compared to hand-written sanitization using chained `.Replace()` calls, `ToNatsSubject` is faster while producing **identical allocations** to raw (unsafe) interpolation:
+
+```
+| Method                              | Mean       | Allocated |
+|------------------------------------ |-----------:|----------:|
+| Single_Interpolation_Unsafe         |   6.70 ns  |      56 B |
+| Single_Interpolation_ManualSanitize |  48.10 ns  |      56 B |
+| Single_ToNatsSubject                |  44.01 ns  |      56 B |
+|                                     |            |           |
+| Multi_Interpolation_Unsafe          |  26.03 ns  |      72 B |
+| Multi_Interpolation_ManualSanitize  | 155.33 ns  |      72 B |
+| Multi_ToNatsSubject                 |  71.76 ns  |      72 B |
+```
+
+Raw interpolation is naturally the fastest since it performs no validation or encoding — but it's also **unsafe** for dynamic input (no protection against wildcard injection or invalid subjects). `ToNatsSubject` is consistently faster than the manual `.Replace()` chain approach (up to 2x for multiple parameters) while adding template validation and correct percent-encoding.
 
 ## Versioning and license
 
 This project follows semantic versioning. See `LICENSE` at the repo root for the Apache 2.0 license.
-
-## Notes
-
-- The method is allocation-conscious and only encodes when necessary.
-- Encoding preserves readability where possible while guaranteeing subject safety.
