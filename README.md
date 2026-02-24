@@ -20,7 +20,6 @@ not made until the specific project has a v1.0.0 version.
 | Synadia.Orbit.JetStream.Publisher | High-performance JetStream publishing | [README](src/Synadia.Orbit.JetStream.Publisher/PACKAGE.md) | [![NuGet](https://img.shields.io/nuget/v/Synadia.Orbit.JetStream.Publisher.svg)](https://www.nuget.org/packages/Synadia.Orbit.JetStream.Publisher) |
 | Synadia.Orbit.KeyValueStore.Extensions | Key encoding codecs for KV stores | [README](src/Synadia.Orbit.KeyValueStore.Extensions/PACKAGE.md) | [![NuGet](https://img.shields.io/nuget/v/Synadia.Orbit.KeyValueStore.Extensions.svg)](https://www.nuget.org/packages/Synadia.Orbit.KeyValueStore.Extensions) |
 | Synadia.Orbit.NatsContext | Connect to NATS using CLI context files | [README](src/Synadia.Orbit.NatsContext/PACKAGE.md) | [![NuGet](https://img.shields.io/nuget/v/Synadia.Orbit.NatsContext.svg)](https://www.nuget.org/packages/Synadia.Orbit.NatsContext) |
-| Synadia.Orbit.NatsCli.Plugin | NATS CLI plugin framework for AOT-compiled binaries | [README](src/Synadia.Orbit.NatsCli.Plugin/PACKAGE.md) | [![NuGet](https://img.shields.io/nuget/v/Synadia.Orbit.NatsCli.Plugin.svg)](https://www.nuget.org/packages/Synadia.Orbit.NatsCli.Plugin) |
 | Synadia.Orbit.PCGroups | Partitioned Consumer Groups for horizontal scaling | [README](src/Synadia.Orbit.PCGroups/PACKAGE.md) | [![NuGet](https://img.shields.io/nuget/v/Synadia.Orbit.PCGroups.svg)](https://www.nuget.org/packages/Synadia.Orbit.PCGroups) |
 | Synadia.Orbit.Testing.NatsServerProcessManager | NATS server process management for testing | [README](src/Synadia.Orbit.Testing.NatsServerProcessManager/PACKAGE.md) | [![NuGet](https://img.shields.io/nuget/v/Synadia.Orbit.Testing.NatsServerProcessManager.svg)](https://www.nuget.org/packages/Synadia.Orbit.Testing.NatsServerProcessManager) |
 
@@ -32,4 +31,5 @@ the packages may be removed in future releases. If you're interested in any of t
 
 | Package | Description | Docs | NuGet |
 |---------|-------------|------|-------|
+| Synadia.Orbit.NatsCli.Plugin | NATS CLI plugin framework for AOT-compiled binaries | [README](src/Synadia.Orbit.NatsCli.Plugin/PACKAGE.md) | [![NuGet](https://img.shields.io/nuget/v/Synadia.Orbit.NatsCli.Plugin.svg)](https://www.nuget.org/packages/Synadia.Orbit.NatsCli.Plugin) |
 | Synadia.Orbit.ParameterizedSubject | Safe, parameterized NATS subject building with percent-encoding | [README](src/Synadia.Orbit.ParameterizedSubject/PACKAGE.md) | [![NuGet](https://img.shields.io/nuget/v/Synadia.Orbit.ParameterizedSubject.svg)](https://www.nuget.org/packages/Synadia.Orbit.ParameterizedSubject) |
