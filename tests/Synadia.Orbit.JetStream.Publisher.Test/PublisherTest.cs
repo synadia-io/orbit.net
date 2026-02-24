@@ -26,7 +26,7 @@ public class PublisherTest
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
 
-        await connection.ConnectAsync();
+        await connection.ConnectRetryAsync();
 
         INatsJSContext js = connection.CreateJetStreamContext();
         string prefix = _server.GetNextId();

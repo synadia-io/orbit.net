@@ -2,18 +2,23 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Synadia.Orbit.Core.Extensions\Synadia.Orbit.Core.Extensions.csproj" />
     <ProjectReference Include="..\..\src\Synadia.Orbit.JetStream.Extensions\Synadia.Orbit.JetStream.Extensions.csproj" />
     <ProjectReference Include="..\..\src\Synadia.Orbit.JetStream.Publisher\Synadia.Orbit.JetStream.Publisher.csproj" />
+    <ProjectReference Include="..\..\src\Synadia.Orbit.KeyValueStore.Extensions\Synadia.Orbit.KeyValueStore.Extensions.csproj" />
+    <ProjectReference Include="..\..\src\Synadia.Orbit.NatsContext\Synadia.Orbit.NatsContext.csproj" />
+    <ProjectReference Include="..\..\src\Synadia.Orbit.PCGroups\Synadia.Orbit.PCGroups.csproj" />
+    <ProjectReference Include="..\..\src\Synadia.Orbit.Counters\Synadia.Orbit.Counters.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="nats.net" Version="2.5.9" />
+    <PackageReference Include="nats.net" />
   </ItemGroup>
 
 </Project>

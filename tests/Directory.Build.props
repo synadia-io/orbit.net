@@ -3,7 +3,13 @@
 
   <PropertyGroup>
     <Version>1.0.0</Version>
+    <!-- SA1600: Elements should be documented (StyleCop); not required for test projects -->
     <NoWarn>$(NoWarn);SA1600</NoWarn>
   </PropertyGroup>
+
+  <!-- For modern TFMs, force 8.0.0; netstandard2.0 already gets it from root Directory.Build.props -->
+  <ItemGroup Condition="'$(TargetFramework)' != 'netstandard2.0'">
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" />
+  </ItemGroup>
 
 </Project>

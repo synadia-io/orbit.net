@@ -4,84 +4,155 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Simulate release without pushing to NuGet or creating tags'
+        type: boolean
+        default: false
+      branch-release:
+        description: 'Allow release from non-main branch (e.g., for preview packages)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 jobs:
-  nuget:
-    name: dotnet
+  check:
+    name: Check versions
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.check.outputs.packages }}
+    steps:
+      - name: Validate branch release
+        if: ${{ github.ref_name != 'main' && github.event_name == 'workflow_dispatch' && inputs.dry-run != true && inputs.branch-release != true }}
+        run: |
+          echo "::error::Releasing from non-main branch requires 'branch-release' to be checked"
+          exit 1
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - id: check
+        name: Determine packages to release
+        run: |
+          packages=()
+          for version_file in src/Synadia.Orbit.*/version.txt; do
+            version="$(head -n 1 "$version_file")"
+            pkg="$(basename "$(dirname "$version_file")" | sed 's/Synadia.Orbit.//')"
+            tag="$pkg/v$version"
+            if [ "$version" = "1.0.0-preview.0" ]; then
+              echo "⏭️ $pkg: skipped (preview placeholder)"
+              continue
+            fi
+            if [ "$(git ls-remote origin "refs/tags/$tag" | wc -l)" -eq 1 ]; then
+              echo "✅ $pkg: $version already released"
+              continue
+            fi
+            echo "📦 $pkg: $version needs release"
+            packages+=("{\"pkg\":\"$pkg\",\"tag\":\"$tag\"}")
+          done
+          echo "---"
+          echo "Total: ${#packages[@]} package(s) to release"
+          if [ ${#packages[@]} -eq 0 ]; then
+            echo "packages=[]" >> "$GITHUB_OUTPUT"
+          else
+            json=$(IFS=,; echo "[${packages[*]}]")
+            echo "packages=$json" >> "$GITHUB_OUTPUT"
+          fi
+
+  release:
+    name: Release ${{ matrix.pkg }}
+    needs: check
+    if: ${{ needs.check.outputs.packages != '[]' }}
     strategy:
       fail-fast: false
       matrix:
-        config:
-          - pkg: 'JetStream.Extensions'
-          - pkg: 'JetStream.Publisher'
+        include: ${{ fromJSON(needs.check.outputs.packages) }}
     runs-on: ubuntu-latest
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      NUGET_XMLDOC_MODE: skip
+      DRY_RUN: ${{ github.event_name == 'pull_request' || inputs.dry-run == true }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - id: tag
-        name: Determine tag
-        run: |
-          version="$(head -n 1 src/Synadia.Orbit.${{ matrix.config.pkg }}/version.txt)"
-          ref_name="${{ matrix.config.pkg }}/v$version"
-          create=true
-          if [ "$(git ls-remote origin "refs/tags/$ref_name" | wc -l)" = "1" ]; then
-            create=false
-          fi
-          echo "ref-name=$ref_name" | tee -a "$GITHUB_OUTPUT"
-          echo "create=$create" | tee -a "$GITHUB_OUTPUT"
-
-      - if: ${{ fromJSON(steps.tag.outputs.create) }}
-        name: Set up Go
+      - name: Set up Go
         uses: actions/setup-go@v5
         with: { cache: true }
 
-      - if: ${{ fromJSON(steps.tag.outputs.create) }}
-        name: Install nats-server
+      - name: Install nats-server
         run: go install github.com/nats-io/nats-server/v2@latest
 
-      - if: ${{ fromJSON(steps.tag.outputs.create) }}
-        name: Check nats-server
-        run: nats-server -v
-
-      - if: ${{ fromJSON(steps.tag.outputs.create) }}
-        name: Setup dotnet
+      - name: Setup dotnet
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
             8.x
             9.x
+            10.x
 
-      - if: ${{ fromJSON(steps.tag.outputs.create) }}
-        name: Test
-        working-directory: ./tests/Synadia.Orbit.${{ matrix.config.pkg }}.Test
+      - name: Test
+        working-directory: ./tests/Synadia.Orbit.${{ matrix.pkg }}.Test
+        run: dotnet test -c Release
+
+      - name: Pack
+        working-directory: ./src/Synadia.Orbit.${{ matrix.pkg }}
+        run: dotnet pack -c Release -o dist -p:IncludeSymbols=true -p:SymbolPackageFormat=snupkg -p:ContinuousIntegrationBuild=true
+
+      - name: Push
+        if: ${{ env.DRY_RUN == 'false' }}
+        working-directory: ./src/Synadia.Orbit.${{ matrix.pkg }}/dist
+        run: dotnet nuget push *.nupkg -s https://api.nuget.org/v3/index.json -k "${{ secrets.NUGET_API_KEY }}" --skip-duplicate
+
+      - name: Push (dry-run)
+        if: ${{ env.DRY_RUN == 'true' }}
+        working-directory: ./src/Synadia.Orbit.${{ matrix.pkg }}/dist
         run: |
-          nats-server -v
-          dotnet test -c Release
+          echo "Dry-run: would push packages:"
+          pwd
+          ls -l
 
-      - if: ${{ fromJSON(steps.tag.outputs.create) }}
-        name: Pack
-        working-directory: ./src/Synadia.Orbit.${{ matrix.config.pkg }}
-        # https://learn.microsoft.com/en-us/nuget/create-packages/symbol-packages-snupkg
-        # https://devblogs.microsoft.com/dotnet/producing-packages-with-source-link/
+      - name: Tag
+        if: ${{ env.DRY_RUN == 'false' }}
         run: |
-          dotnet pack -c Release -o dist -p:IncludeSymbols=true -p:SymbolPackageFormat=snupkg -p:ContinuousIntegrationBuild=true
+          git tag "${{ matrix.tag }}"
+          git push origin "${{ matrix.tag }}"
 
-      - if: ${{ fromJSON(steps.tag.outputs.create) }}
-        name: Push
-        working-directory: ./src/Synadia.Orbit.${{ matrix.config.pkg }}
+      - name: Create GitHub Release
+        if: ${{ env.DRY_RUN == 'false' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cd dist
-          ls -lh
-          # this should upload snupkgs in the same folder
-          dotnet nuget push *.nupkg -s https://api.nuget.org/v3/index.json -k "${{ secrets.NUGET_API_KEY }}" --skip-duplicate
+          TAG="${{ matrix.tag }}"
+          VERSION="${TAG#*/v}"
+          PRERELEASE_FLAG=""
+          if [[ "$VERSION" == *-* ]]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "GitHub release for tag '$TAG' already exists; skipping creation."
+          else
+            gh release create "$TAG" --title "Synadia.Orbit.${{ matrix.pkg }} v${VERSION}" --notes "" $PRERELEASE_FLAG
+          fi
 
-      - if: ${{ fromJSON(steps.tag.outputs.create) }}
-        name: Tag
+      - name: Tag (dry-run)
+        if: ${{ env.DRY_RUN == 'true' }}
         run: |
-          git tag "${{ steps.tag.outputs.ref-name }}"
-          git push origin "${{ steps.tag.outputs.ref-name }}"
+          echo "Dry-run: would create and push tag ${{ matrix.tag }}"
 
+      - name: Create GitHub Release (dry-run)
+        if: ${{ env.DRY_RUN == 'true' }}
+        run: |
+          TAG="${{ matrix.tag }}"
+          VERSION="${TAG#*/v}"
+          if [[ "$VERSION" == *-* ]]; then
+            echo "Dry-run: would create GitHub pre-release for $TAG"
+          else
+            echo "Dry-run: would create GitHub release for $TAG"
+          fi

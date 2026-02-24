@@ -1,0 +1,49 @@
+<Solution>
+  <Folder Name="/.github/" />
+  <Folder Name="/.github/workflows/">
+    <File Path=".github/workflows/release.yml" />
+    <File Path=".github/workflows/test.yml" />
+  </Folder>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path=".gitignore" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="orbit.png" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/src/">
+    <File Path="src/Directory.Build.props" />
+    <Project Path="src/Synadia.Orbit.Core.Extensions/Synadia.Orbit.Core.Extensions.csproj" />
+    <Project Path="src/Synadia.Orbit.JetStream.Extensions/Synadia.Orbit.JetStream.Extensions.csproj" />
+    <Project Path="src/Synadia.Orbit.JetStream.Publisher/Synadia.Orbit.JetStream.Publisher.csproj" />
+    <Project Path="src/Synadia.Orbit.KeyValueStore.Extensions/Synadia.Orbit.KeyValueStore.Extensions.csproj" />
+    <Project Path="src/Synadia.Orbit.ParameterizedSubject/Synadia.Orbit.ParameterizedSubject.csproj" />
+    <Project Path="src/Synadia.Orbit.PCGroups/Synadia.Orbit.PCGroups.csproj" />
+    <Project Path="src/Synadia.Orbit.NatsContext/Synadia.Orbit.NatsContext.csproj" />
+    <Project Path="src/Synadia.Orbit.NatsCli.Plugin/Synadia.Orbit.NatsCli.Plugin.csproj" />
+    <Project Path="src/Synadia.Orbit.Testing.NatsServerProcessManager/Synadia.Orbit.Testing.NatsServerProcessManager.csproj" />
+    <Project Path="src/Synadia.Orbit.Counters/Synadia.Orbit.Counters.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <File Path="tests/Directory.Build.props" />
+    <Project Path="tests/Synadia.Orbit.Core.Extensions.Test/Synadia.Orbit.Core.Extensions.Test.csproj" />
+    <Project Path="tests/Synadia.Orbit.JetStream.Extensions.Test/Synadia.Orbit.JetStream.Extensions.Test.csproj" />
+    <Project Path="tests/Synadia.Orbit.JetStream.Publisher.Test/Synadia.Orbit.JetStream.Publisher.Test.csproj" />
+    <Project Path="tests/Synadia.Orbit.KeyValueStore.Extensions.Test/Synadia.Orbit.KeyValueStore.Extensions.Test.csproj" />
+    <Project Path="tests/Synadia.Orbit.ParameterizedSubject.Test/Synadia.Orbit.ParameterizedSubject.Test.csproj" />
+    <Project Path="tests/Synadia.Orbit.PCGroups.Test/Synadia.Orbit.PCGroups.Test.csproj" />
+    <Project Path="tests/Synadia.Orbit.NatsContext.Test/Synadia.Orbit.NatsContext.Test.csproj" />
+    <Project Path="tests/Synadia.Orbit.TestUtils/Synadia.Orbit.TestUtils.csproj" />
+    <Project Path="tests/Synadia.Orbit.NatsCli.Plugin.Test/Synadia.Orbit.NatsCli.Plugin.Test.csproj" />
+    <Project Path="tests/Synadia.Orbit.Counters.Test/Synadia.Orbit.Counters.Test.csproj" />
+    <Project Path="tests/Synadia.Orbit.Testing.NatsServerProcessManager.Test/Synadia.Orbit.Testing.NatsServerProcessManager.Test.csproj" />
+    <Project Path="tests/Synadia.Orbit.Benchmark/Synadia.Orbit.Benchmark.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/DocsExamples/DocsExamples.csproj" />
+    <Project Path="tools/OrbitPcg/OrbitPcg.csproj" />
+    <Project Path="tools/OrbitPublish/OrbitPublish.csproj" />
+    <Project Path="tools/peek/peek.csproj" />
+  </Folder>
+</Solution>
