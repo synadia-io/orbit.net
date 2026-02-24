@@ -1,6 +1,8 @@
-# Synadia.Orbit.NatsCli.Plugin
+# Synadia.Orbit.NatsCli.Plugin [EXPERIMENTAL]
 
-> **Experimental:** This is an experimental feature. The API may change in future releases.
+> **This package is experimental.** It is not part of the official NATS ecosystem and is published
+> exclusively in Orbit .NET to gauge interest and address community requests. The API may change
+> or the package may be removed in a future release.
 
 A library for building NATS CLI plugins as AOT-compiled native binaries.
 Extends System.CommandLine with an entry point that handles the fisk introspection protocol (JSON handshake)
