@@ -23,3 +23,13 @@ not made until the specific project has a v1.0.0 version.
 | Synadia.Orbit.NatsCli.Plugin | NATS CLI plugin framework for AOT-compiled binaries | [README](src/Synadia.Orbit.NatsCli.Plugin/PACKAGE.md) | [![NuGet](https://img.shields.io/nuget/v/Synadia.Orbit.NatsCli.Plugin.svg)](https://www.nuget.org/packages/Synadia.Orbit.NatsCli.Plugin) |
 | Synadia.Orbit.PCGroups | Partitioned Consumer Groups for horizontal scaling | [README](src/Synadia.Orbit.PCGroups/PACKAGE.md) | [![NuGet](https://img.shields.io/nuget/v/Synadia.Orbit.PCGroups.svg)](https://www.nuget.org/packages/Synadia.Orbit.PCGroups) |
 | Synadia.Orbit.Testing.NatsServerProcessManager | NATS server process management for testing | [README](src/Synadia.Orbit.Testing.NatsServerProcessManager/PACKAGE.md) | [![NuGet](https://img.shields.io/nuget/v/Synadia.Orbit.Testing.NatsServerProcessManager.svg)](https://www.nuget.org/packages/Synadia.Orbit.Testing.NatsServerProcessManager) |
+
+# Experimental Packages
+
+The following packages are **not part of the official NATS ecosystem**. They are published exclusively
+in Orbit .NET to gauge interest and address NATS .NET community requests. Their APIs may change or
+the packages may be removed in future releases. If you're interested in any of these packages or have feedback, please [open an issue](https://github.com/synadia-io/orbit.net/issues) and we'll consider promoting it to a fully supported package.
+
+| Package | Description | Docs | NuGet |
+|---------|-------------|------|-------|
+| Synadia.Orbit.ParameterizedSubject | Safe, parameterized NATS subject building with percent-encoding | [README](src/Synadia.Orbit.ParameterizedSubject/PACKAGE.md) | [![NuGet](https://img.shields.io/nuget/v/Synadia.Orbit.ParameterizedSubject.svg)](https://www.nuget.org/packages/Synadia.Orbit.ParameterizedSubject) |
