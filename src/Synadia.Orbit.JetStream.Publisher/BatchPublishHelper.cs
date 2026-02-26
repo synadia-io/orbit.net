@@ -39,8 +39,9 @@ internal static class BatchPublishHelper
 
         if (opts.Ttl.HasValue)
         {
-            // Convert to nanoseconds (Ticks * 100 since each tick is 100ns)
-            headers["Nats-TTL"] = (opts.Ttl.Value.Ticks * 100).ToString();
+            // Format as Go duration string (e.g. "5s") which the server parses via time.ParseDuration.
+            // Minimum TTL is 1 second; matches the format used by NATS .NET KV store.
+            headers["Nats-TTL"] = $"{(long)opts.Ttl.Value.TotalSeconds:D}s";
         }
 
         if (!string.IsNullOrEmpty(opts.Stream))

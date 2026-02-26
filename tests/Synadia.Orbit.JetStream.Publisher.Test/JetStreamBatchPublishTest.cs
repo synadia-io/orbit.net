@@ -26,6 +26,7 @@ public class JetStreamBatchPublishTest
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
         await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 12), $"Server version {connection.ServerInfo?.Version} does not support batch publish (requires 2.12+)");
 
         var js = connection.CreateJetStreamContext();
         var prefix = _server.GetNextId();
@@ -84,6 +85,7 @@ public class JetStreamBatchPublishTest
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
         await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 12), $"Server version {connection.ServerInfo?.Version} does not support batch publish (requires 2.12+)");
 
         var js = connection.CreateJetStreamContext();
         var prefix = _server.GetNextId();
@@ -145,6 +147,7 @@ public class JetStreamBatchPublishTest
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
         await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 12), $"Server version {connection.ServerInfo?.Version} does not support batch publish (requires 2.12+)");
 
         var js = connection.CreateJetStreamContext();
         var prefix = _server.GetNextId();
@@ -177,6 +180,7 @@ public class JetStreamBatchPublishTest
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
         await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 12), $"Server version {connection.ServerInfo?.Version} does not support batch publish (requires 2.12+)");
 
         var js = connection.CreateJetStreamContext();
         var prefix = _server.GetNextId();
@@ -208,6 +212,7 @@ public class JetStreamBatchPublishTest
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
         await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 12), $"Server version {connection.ServerInfo?.Version} does not support batch publish (requires 2.12+)");
 
         var js = connection.CreateJetStreamContext();
         var prefix = _server.GetNextId();
@@ -260,6 +265,7 @@ public class JetStreamBatchPublishTest
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
         await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 12), $"Server version {connection.ServerInfo?.Version} does not support batch publish (requires 2.12+)");
 
         var js = connection.CreateJetStreamContext();
         var prefix = _server.GetNextId();
@@ -299,6 +305,7 @@ public class JetStreamBatchPublishTest
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
         await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 12), $"Server version {connection.ServerInfo?.Version} does not support batch publish (requires 2.12+)");
 
         var js = connection.CreateJetStreamContext();
         var prefix = _server.GetNextId();
@@ -332,6 +339,7 @@ public class JetStreamBatchPublishTest
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
         await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 12), $"Server version {connection.ServerInfo?.Version} does not support batch publish (requires 2.12+)");
 
         var js = connection.CreateJetStreamContext();
         var prefix = _server.GetNextId();
@@ -364,6 +372,7 @@ public class JetStreamBatchPublishTest
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
         await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 12), $"Server version {connection.ServerInfo?.Version} does not support batch publish (requires 2.12+)");
 
         var js = connection.CreateJetStreamContext();
         var prefix = _server.GetNextId();
@@ -407,6 +416,7 @@ public class JetStreamBatchPublishTest
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
         await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 12), $"Server version {connection.ServerInfo?.Version} does not support batch publish (requires 2.12+)");
 
         var js = connection.CreateJetStreamContext();
         var prefix = _server.GetNextId();
@@ -452,6 +462,7 @@ public class JetStreamBatchPublishTest
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
         await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 12), $"Server version {connection.ServerInfo?.Version} does not support batch publish (requires 2.12+)");
 
         var js = connection.CreateJetStreamContext();
         var prefix = _server.GetNextId();
@@ -495,6 +506,7 @@ public class JetStreamBatchPublishTest
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
         await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 12), $"Server version {connection.ServerInfo?.Version} does not support batch publish (requires 2.12+)");
 
         var js = connection.CreateJetStreamContext();
         var prefix = _server.GetNextId();
