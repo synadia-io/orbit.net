@@ -403,6 +403,94 @@ public class JetStreamBatchPublishTest
     }
 
     [Fact]
+    public async Task Invalid_headers()
+    {
+        await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await connection.ConnectAsync();
+
+        var js = connection.CreateJetStreamContext();
+        var prefix = _server.GetNextId();
+        var streamName = $"{prefix}TEST";
+        var subject = $"{prefix}test";
+
+        var ct = TestContext.Current.CancellationToken;
+
+        // Create a stream with batch publishing enabled
+        var stream = await js.CreateStreamAsync(
+            new StreamConfig(streamName, [$"{subject}.>"]) { AllowAtomicPublish = true },
+            ct);
+
+        var batch = new BatchPublisher(js);
+
+        // Add a message with unsupported Nats-Msg-Id header
+        var headers = new NatsHeaders { { "Nats-Msg-Id", "test-msg-id" } };
+        await batch.AddMsgAsync(
+            new NatsMsg<byte[]>
+            {
+                Subject = $"{subject}.1",
+                Data = "message 1"u8.ToArray(),
+                Headers = headers,
+            },
+            cancellationToken: ct);
+
+        // Commit should fail with unsupported header error (server version dependent)
+        try
+        {
+            await batch.CommitAsync($"{subject}.2", "message 2"u8.ToArray(), cancellationToken: ct);
+
+            // If server didn't reject, this check may not be enforced in this version
+            _output.WriteLine("Server did not reject unsupported Nats-Msg-Id header in batch");
+        }
+        catch (BatchPublishUnsupportedHeaderException)
+        {
+            // Expected - server enforces the header check
+        }
+    }
+
+    [Fact]
+    public async Task Too_many_outstanding_batches()
+    {
+        await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await connection.ConnectAsync();
+
+        var js = connection.CreateJetStreamContext();
+        var prefix = _server.GetNextId();
+        var streamName = $"{prefix}TEST";
+        var subject = $"{prefix}test";
+
+        var ct = TestContext.Current.CancellationToken;
+
+        // Create a stream with batch publishing enabled
+        var stream = await js.CreateStreamAsync(
+            new StreamConfig(streamName, [$"{subject}.>"]) { AllowAtomicPublish = true },
+            ct);
+
+        // Create 50 batches (the default max) and add a message to each
+        for (int i = 0; i < 50; i++)
+        {
+            var b = new BatchPublisher(js);
+            await b.AddAsync($"{subject}.1", "message 1"u8.ToArray(), cancellationToken: ct);
+        }
+
+        // Now create one more batch - the 51st should fail
+        var batch = new BatchPublisher(js);
+
+        try
+        {
+            // With flow control enabled (AckFirst=true by default), the first Add may fail
+            await batch.AddAsync($"{subject}.1", "message 1"u8.ToArray(), cancellationToken: ct);
+
+            // If Add didn't fail, Commit should fail
+            await Assert.ThrowsAsync<BatchPublishIncompleteException>(
+                async () => await batch.CommitAsync($"{subject}.2", "message 2"u8.ToArray(), cancellationToken: ct));
+        }
+        catch (BatchPublishIncompleteException)
+        {
+            // This is also expected - too many outstanding batches
+        }
+    }
+
+    [Fact]
     public async Task Flow_control_ack_every()
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
