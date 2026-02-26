@@ -37,6 +37,11 @@ internal static class BatchPublishHelper
             return;
         }
 
+        if (!string.IsNullOrEmpty(opts.LastSubject) && !opts.LastSubjectSeq.HasValue)
+        {
+            throw new ArgumentException("LastSubjectSeq is required when LastSubject is set", nameof(opts));
+        }
+
         if (opts.Ttl.HasValue)
         {
             // Format as Go duration string (e.g. "5s") which the server parses via time.ParseDuration.
@@ -62,11 +67,19 @@ internal static class BatchPublishHelper
         if (!string.IsNullOrEmpty(opts.LastSubject))
         {
             headers["Nats-Expected-Last-Subject-Sequence-Subject"] = opts.LastSubject;
-            if (opts.LastSubjectSeq.HasValue)
-            {
-                headers["Nats-Expected-Last-Subject-Sequence"] = opts.LastSubjectSeq.Value.ToString();
-            }
+            headers["Nats-Expected-Last-Subject-Sequence"] = opts.LastSubjectSeq!.Value.ToString();
         }
+    }
+
+    internal static CancellationTokenSource? CreateCommitCancellationTokenSource(CancellationToken cancellationToken, TimeSpan requestTimeout)
+    {
+        if (cancellationToken.CanBeCanceled)
+        {
+            return null;
+        }
+
+        var cts = new CancellationTokenSource(requestTimeout);
+        return cts;
     }
 
     internal static BatchPublishApiResponse? DeserializeApiResponse(byte[]? data)

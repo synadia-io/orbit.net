@@ -177,12 +177,16 @@ public class BatchPublisher : IBatchPublisher
 
         var msgToSend = msg with { Headers = headers };
 
+        // Apply default timeout if no cancellation is set, matching Go's wrapContextWithoutDeadline behavior.
+        using var cts = BatchPublishHelper.CreateCommitCancellationTokenSource(cancellationToken, _js.Opts.RequestTimeout);
+        var effectiveToken = cts?.Token ?? cancellationToken;
+
         // Request with ack
         var response = await _js.Connection.RequestAsync<byte[], byte[]>(
             msgToSend.Subject,
             msgToSend.Data,
             headers: msgToSend.Headers,
-            cancellationToken: cancellationToken);
+            cancellationToken: effectiveToken);
 
         lock (_lock)
         {

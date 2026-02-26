@@ -97,11 +97,15 @@ public static class JetStreamBatchPublish
             headers[BatchHeaders.BatchCommit] = "1";
             var commitMsg = msgToSend with { Headers = headers };
 
+            // Apply default timeout if no cancellation is set, matching Go's wrapContextWithoutDeadline behavior.
+            using var commitCts = BatchPublishHelper.CreateCommitCancellationTokenSource(cancellationToken, js.Opts.RequestTimeout);
+            var commitToken = commitCts?.Token ?? cancellationToken;
+
             var commitResponse = await js.Connection.RequestAsync<byte[], byte[]>(
                 commitMsg.Subject,
                 commitMsg.Data,
                 headers: commitMsg.Headers,
-                cancellationToken: cancellationToken);
+                cancellationToken: commitToken);
 
             var batchResponse = BatchPublishHelper.DeserializeAckResponse(commitResponse.Data);
 
