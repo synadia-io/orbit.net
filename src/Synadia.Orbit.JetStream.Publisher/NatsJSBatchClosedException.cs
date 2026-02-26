@@ -6,12 +6,12 @@ namespace Synadia.Orbit.JetStream.Publisher;
 /// <summary>
 /// Exception thrown when attempting to use a batch that has been closed.
 /// </summary>
-public class BatchClosedException : Exception
+public class NatsJSBatchClosedException : Exception
 {
     /// <summary>
-    /// Initializes a new instance of the <see cref="BatchClosedException"/> class.
+    /// Initializes a new instance of the <see cref="NatsJSBatchClosedException"/> class.
     /// </summary>
-    public BatchClosedException()
+    public NatsJSBatchClosedException()
         : base("Batch publisher closed")
     {
     }

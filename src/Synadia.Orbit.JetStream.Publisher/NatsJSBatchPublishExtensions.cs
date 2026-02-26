@@ -7,9 +7,9 @@ using NATS.Client.JetStream;
 namespace Synadia.Orbit.JetStream.Publisher;
 
 /// <summary>
-/// Static helper methods for batch publishing.
+/// Extension methods for batch publishing on <see cref="INatsJSContext"/>.
 /// </summary>
-public static class JetStreamBatchPublish
+public static class NatsJSBatchPublishExtensions
 {
     /// <summary>
     /// Publishes a batch of messages to a Stream and waits for an ack for the commit.
@@ -19,10 +19,10 @@ public static class JetStreamBatchPublish
     /// <param name="flowControl">Optional flow control configuration.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The batch acknowledgment from the server.</returns>
-    public static async Task<BatchAck> PublishMsgBatchAsync(
-        INatsJSContext js,
+    public static async Task<NatsJSBatchAck> PublishMsgBatchAsync(
+        this INatsJSContext js,
         NatsMsg<byte[]>[] messages,
-        BatchFlowControl? flowControl = null,
+        NatsJSBatchFlowControl? flowControl = null,
         CancellationToken cancellationToken = default)
     {
         if (messages.Length == 0)
@@ -31,16 +31,16 @@ public static class JetStreamBatchPublish
         }
 
         var batchId = Nuid.NewNuid();
-        var fc = flowControl ?? new BatchFlowControl();
+        var fc = flowControl ?? new NatsJSBatchFlowControl();
 
         for (int i = 0; i < messages.Length; i++)
         {
             var msg = messages[i];
             var headers = msg.Headers ?? new NatsHeaders();
 
-            headers.Remove(BatchHeaders.BatchCommit);
-            headers[BatchHeaders.BatchId] = batchId;
-            headers[BatchHeaders.BatchSeq] = (i + 1).ToString();
+            headers.Remove(NatsJSBatchHeaders.BatchCommit);
+            headers[NatsJSBatchHeaders.BatchId] = batchId;
+            headers[NatsJSBatchHeaders.BatchSeq] = (i + 1).ToString();
 
             var msgToSend = msg with { Headers = headers };
 
@@ -61,7 +61,7 @@ public static class JetStreamBatchPublish
 
                 if (!needsAck)
                 {
-                    await js.Connection.PublishAsync(msgToSend.Subject, msgToSend.Data, headers: msgToSend.Headers, cancellationToken: cancellationToken);
+                    await js.Connection.PublishAsync(msgToSend.Subject, msgToSend.Data, headers: msgToSend.Headers, cancellationToken: cancellationToken).ConfigureAwait(false);
                     continue;
                 }
 
@@ -74,7 +74,7 @@ public static class JetStreamBatchPublish
                         msgToSend.Subject,
                         msgToSend.Data,
                         headers: msgToSend.Headers,
-                        cancellationToken: cts.Token);
+                        cancellationToken: cts.Token).ConfigureAwait(false);
 
                     if (response.Data?.Length > 0)
                     {
@@ -94,7 +94,7 @@ public static class JetStreamBatchPublish
             }
 
             // Commit the batch on the last message
-            headers[BatchHeaders.BatchCommit] = "1";
+            headers[NatsJSBatchHeaders.BatchCommit] = "1";
             var commitMsg = msgToSend with { Headers = headers };
 
             // Apply default timeout if no cancellation is set, matching Go's wrapContextWithoutDeadline behavior.
@@ -105,7 +105,7 @@ public static class JetStreamBatchPublish
                 commitMsg.Subject,
                 commitMsg.Data,
                 headers: commitMsg.Headers,
-                cancellationToken: commitToken);
+                cancellationToken: commitToken).ConfigureAwait(false);
 
             var batchResponse = BatchPublishHelper.DeserializeAckResponse(commitResponse.Data);
 
@@ -119,10 +119,10 @@ public static class JetStreamBatchPublish
                 batchResponse.BatchId != batchId ||
                 batchResponse.BatchSize != messages.Length)
             {
-                throw new InvalidBatchAckException();
+                throw new NatsJSInvalidBatchAckException();
             }
 
-            return new BatchAck
+            return new NatsJSBatchAck
             {
                 Stream = batchResponse.Stream!,
                 Sequence = batchResponse.Seq,

@@ -8,7 +8,7 @@ namespace Synadia.Orbit.JetStream.Publisher;
 /// <summary>
 /// Exception thrown when batch publish uses unsupported headers.
 /// </summary>
-public class BatchPublishUnsupportedHeaderException : NatsJSException
+public class NatsJSBatchPublishUnsupportedHeaderException : NatsJSException
 {
     /// <summary>
     /// Error code for unsupported headers.
@@ -16,9 +16,9 @@ public class BatchPublishUnsupportedHeaderException : NatsJSException
     public const int ErrorCode = 10177;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="BatchPublishUnsupportedHeaderException"/> class.
+    /// Initializes a new instance of the <see cref="NatsJSBatchPublishUnsupportedHeaderException"/> class.
     /// </summary>
-    public BatchPublishUnsupportedHeaderException()
+    public NatsJSBatchPublishUnsupportedHeaderException()
         : base("Batch publish unsupported header used (Nats-Expected-Last-Msg-Id or Nats-Msg-Id)")
     {
     }

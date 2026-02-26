@@ -8,7 +8,7 @@ namespace Synadia.Orbit.JetStream.Publisher;
 /// <summary>
 /// Provides methods for publishing messages to a stream in batches.
 /// </summary>
-public interface IBatchPublisher
+public interface INatsJSBatchPublisher : IAsyncDisposable
 {
     /// <summary>
     /// Gets the number of messages added to the batch so far.
@@ -28,7 +28,7 @@ public interface IBatchPublisher
     /// <param name="opts">Optional per-message options.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
-    Task AddAsync(string subject, byte[] data, BatchMsgOpts? opts = null, CancellationToken cancellationToken = default);
+    Task AddAsync(string subject, byte[] data, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Publishes a message to the batch.
@@ -37,7 +37,7 @@ public interface IBatchPublisher
     /// <param name="opts">Optional per-message options.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
-    Task AddMsgAsync(NatsMsg<byte[]> msg, BatchMsgOpts? opts = null, CancellationToken cancellationToken = default);
+    Task AddMsgAsync(NatsMsg<byte[]> msg, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Publishes the final message with the given subject and data, and commits the batch.
@@ -47,7 +47,7 @@ public interface IBatchPublisher
     /// <param name="opts">Optional per-message options.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task containing the batch acknowledgment.</returns>
-    Task<BatchAck> CommitAsync(string subject, byte[] data, BatchMsgOpts? opts = null, CancellationToken cancellationToken = default);
+    Task<NatsJSBatchAck> CommitAsync(string subject, byte[] data, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Publishes the final message and commits the batch.
@@ -56,7 +56,7 @@ public interface IBatchPublisher
     /// <param name="opts">Optional per-message options.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task containing the batch acknowledgment.</returns>
-    Task<BatchAck> CommitMsgAsync(NatsMsg<byte[]> msg, BatchMsgOpts? opts = null, CancellationToken cancellationToken = default);
+    Task<NatsJSBatchAck> CommitMsgAsync(NatsMsg<byte[]> msg, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Cancels the batch without committing.

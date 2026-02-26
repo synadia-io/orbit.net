@@ -8,7 +8,7 @@ namespace Synadia.Orbit.JetStream.Publisher;
 /// <summary>
 /// Exception thrown when batch publish is not enabled on the stream.
 /// </summary>
-public class BatchPublishNotEnabledException : NatsJSException
+public class NatsJSBatchPublishNotEnabledException : NatsJSException
 {
     /// <summary>
     /// Error code for batch publish not enabled.
@@ -16,9 +16,9 @@ public class BatchPublishNotEnabledException : NatsJSException
     public const int ErrorCode = 10174;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="BatchPublishNotEnabledException"/> class.
+    /// Initializes a new instance of the <see cref="NatsJSBatchPublishNotEnabledException"/> class.
     /// </summary>
-    public BatchPublishNotEnabledException()
+    public NatsJSBatchPublishNotEnabledException()
         : base("Batch publish not enabled on stream")
     {
     }

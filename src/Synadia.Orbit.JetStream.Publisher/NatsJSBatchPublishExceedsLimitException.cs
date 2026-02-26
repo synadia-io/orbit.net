@@ -8,7 +8,7 @@ namespace Synadia.Orbit.JetStream.Publisher;
 /// <summary>
 /// Exception thrown when batch publish sequence exceeds server limit.
 /// </summary>
-public class BatchPublishExceedsLimitException : NatsJSException
+public class NatsJSBatchPublishExceedsLimitException : NatsJSException
 {
     /// <summary>
     /// Error code for exceeding batch limit.
@@ -16,9 +16,9 @@ public class BatchPublishExceedsLimitException : NatsJSException
     public const int ErrorCode = 10199;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="BatchPublishExceedsLimitException"/> class.
+    /// Initializes a new instance of the <see cref="NatsJSBatchPublishExceedsLimitException"/> class.
     /// </summary>
-    public BatchPublishExceedsLimitException()
+    public NatsJSBatchPublishExceedsLimitException()
         : base("Batch publish sequence exceeds server limit (default 1000)")
     {
     }

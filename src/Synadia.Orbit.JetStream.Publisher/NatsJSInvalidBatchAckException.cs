@@ -8,12 +8,12 @@ namespace Synadia.Orbit.JetStream.Publisher;
 /// <summary>
 /// Exception thrown when JetStream ack from batch publish is invalid.
 /// </summary>
-public class InvalidBatchAckException : NatsJSException
+public class NatsJSInvalidBatchAckException : NatsJSException
 {
     /// <summary>
-    /// Initializes a new instance of the <see cref="InvalidBatchAckException"/> class.
+    /// Initializes a new instance of the <see cref="NatsJSInvalidBatchAckException"/> class.
     /// </summary>
-    public InvalidBatchAckException()
+    public NatsJSInvalidBatchAckException()
         : base("Invalid JetStream batch publish response")
     {
     }

@@ -6,7 +6,7 @@ namespace Synadia.Orbit.JetStream.Publisher;
 /// <summary>
 /// Header constants for batch publishing.
 /// </summary>
-public static class BatchHeaders
+public static class NatsJSBatchHeaders
 {
     /// <summary>
     /// Contains the batch ID for a message in a batch publish.

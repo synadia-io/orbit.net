@@ -6,7 +6,7 @@ namespace Synadia.Orbit.JetStream.Publisher;
 /// <summary>
 /// Configures flow control for batch publishing.
 /// </summary>
-public record BatchFlowControl
+public record NatsJSBatchFlowControl
 {
     /// <summary>
     /// Gets a value indicating whether to wait for an ack on the first message in the batch. Default: true.

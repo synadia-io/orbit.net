@@ -9,25 +9,25 @@ namespace Synadia.Orbit.JetStream.Publisher;
 /// <summary>
 /// Implementation of batch publisher for publishing messages to a stream in batches.
 /// </summary>
-public class BatchPublisher : IBatchPublisher
+public class NatsJSBatchPublisher : INatsJSBatchPublisher
 {
     private readonly INatsJSContext _js;
     private readonly string _batchId;
-    private readonly BatchFlowControl _flowControl;
+    private readonly NatsJSBatchFlowControl _flowControl;
     private readonly object _lock = new();
     private int _sequence;
     private bool _closed;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="BatchPublisher"/> class.
+    /// Initializes a new instance of the <see cref="NatsJSBatchPublisher"/> class.
     /// </summary>
     /// <param name="js">The JetStream context to use for publishing.</param>
     /// <param name="flowControl">Optional flow control configuration.</param>
-    public BatchPublisher(INatsJSContext js, BatchFlowControl? flowControl = null)
+    public NatsJSBatchPublisher(INatsJSContext js, NatsJSBatchFlowControl? flowControl = null)
     {
         _js = js;
         _batchId = Nuid.NewNuid();
-        _flowControl = flowControl ?? new BatchFlowControl();
+        _flowControl = flowControl ?? new NatsJSBatchFlowControl();
     }
 
     /// <inheritdoc />
@@ -55,7 +55,7 @@ public class BatchPublisher : IBatchPublisher
     }
 
     /// <inheritdoc />
-    public Task AddAsync(string subject, byte[] data, BatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
+    public Task AddAsync(string subject, byte[] data, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
     {
         var msg = new NatsMsg<byte[]>
         {
@@ -66,7 +66,7 @@ public class BatchPublisher : IBatchPublisher
     }
 
     /// <inheritdoc />
-    public async Task AddMsgAsync(NatsMsg<byte[]> msg, BatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
+    public async Task AddMsgAsync(NatsMsg<byte[]> msg, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
     {
         int currentSeq;
         bool needsAck;
@@ -75,7 +75,7 @@ public class BatchPublisher : IBatchPublisher
         {
             if (_closed)
             {
-                throw new BatchClosedException();
+                throw new NatsJSBatchClosedException();
             }
 
             _sequence++;
@@ -97,15 +97,15 @@ public class BatchPublisher : IBatchPublisher
         var headers = msg.Headers ?? new NatsHeaders();
         BatchPublishHelper.ApplyBatchMessageOptions(headers, opts);
 
-        headers[BatchHeaders.BatchId] = _batchId;
-        headers[BatchHeaders.BatchSeq] = currentSeq.ToString();
+        headers[NatsJSBatchHeaders.BatchId] = _batchId;
+        headers[NatsJSBatchHeaders.BatchSeq] = currentSeq.ToString();
 
         var msgToSend = msg with { Headers = headers };
 
         // If we don't need an ack, use core NATS publish
         if (!needsAck)
         {
-            await _js.Connection.PublishAsync(msgToSend.Subject, msgToSend.Data, headers: msgToSend.Headers, cancellationToken: cancellationToken);
+            await _js.Connection.PublishAsync(msgToSend.Subject, msgToSend.Data, headers: msgToSend.Headers, cancellationToken: cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -120,7 +120,7 @@ public class BatchPublisher : IBatchPublisher
                 msgToSend.Subject,
                 msgToSend.Data,
                 headers: msgToSend.Headers,
-                cancellationToken: cts.Token);
+                cancellationToken: cts.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -139,7 +139,7 @@ public class BatchPublisher : IBatchPublisher
     }
 
     /// <inheritdoc />
-    public Task<BatchAck> CommitAsync(string subject, byte[] data, BatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
+    public Task<NatsJSBatchAck> CommitAsync(string subject, byte[] data, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
     {
         var msg = new NatsMsg<byte[]>
         {
@@ -150,7 +150,7 @@ public class BatchPublisher : IBatchPublisher
     }
 
     /// <inheritdoc />
-    public async Task<BatchAck> CommitMsgAsync(NatsMsg<byte[]> msg, BatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
+    public async Task<NatsJSBatchAck> CommitMsgAsync(NatsMsg<byte[]> msg, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
     {
         int currentSeq;
         string batchId;
@@ -159,7 +159,7 @@ public class BatchPublisher : IBatchPublisher
         {
             if (_closed)
             {
-                throw new BatchClosedException();
+                throw new NatsJSBatchClosedException();
             }
 
             _sequence++;
@@ -171,9 +171,9 @@ public class BatchPublisher : IBatchPublisher
         var headers = msg.Headers ?? new NatsHeaders();
         BatchPublishHelper.ApplyBatchMessageOptions(headers, opts);
 
-        headers[BatchHeaders.BatchId] = batchId;
-        headers[BatchHeaders.BatchSeq] = currentSeq.ToString();
-        headers[BatchHeaders.BatchCommit] = "1";
+        headers[NatsJSBatchHeaders.BatchId] = batchId;
+        headers[NatsJSBatchHeaders.BatchSeq] = currentSeq.ToString();
+        headers[NatsJSBatchHeaders.BatchCommit] = "1";
 
         var msgToSend = msg with { Headers = headers };
 
@@ -186,7 +186,7 @@ public class BatchPublisher : IBatchPublisher
             msgToSend.Subject,
             msgToSend.Data,
             headers: msgToSend.Headers,
-            cancellationToken: effectiveToken);
+            cancellationToken: effectiveToken).ConfigureAwait(false);
 
         lock (_lock)
         {
@@ -205,10 +205,10 @@ public class BatchPublisher : IBatchPublisher
             batchResponse.BatchId != batchId ||
             batchResponse.BatchSize != currentSeq)
         {
-            throw new InvalidBatchAckException();
+            throw new NatsJSInvalidBatchAckException();
         }
 
-        return new BatchAck
+        return new NatsJSBatchAck
         {
             Stream = batchResponse.Stream!,
             Sequence = batchResponse.Seq,
@@ -226,10 +226,24 @@ public class BatchPublisher : IBatchPublisher
         {
             if (_closed)
             {
-                throw new BatchClosedException();
+                throw new NatsJSBatchClosedException();
             }
 
             _closed = true;
         }
+    }
+
+    /// <inheritdoc />
+    public ValueTask DisposeAsync()
+    {
+        lock (_lock)
+        {
+            if (!_closed)
+            {
+                _closed = true;
+            }
+        }
+
+        return default;
     }
 }

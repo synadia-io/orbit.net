@@ -8,7 +8,7 @@ namespace Synadia.Orbit.JetStream.Publisher;
 /// <summary>
 /// Exception thrown when batch publish is incomplete and was abandoned.
 /// </summary>
-public class BatchPublishIncompleteException : NatsJSException
+public class NatsJSBatchPublishIncompleteException : NatsJSException
 {
     /// <summary>
     /// Error code for incomplete batch publish.
@@ -16,9 +16,9 @@ public class BatchPublishIncompleteException : NatsJSException
     public const int ErrorCode = 10176;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="BatchPublishIncompleteException"/> class.
+    /// Initializes a new instance of the <see cref="NatsJSBatchPublishIncompleteException"/> class.
     /// </summary>
-    public BatchPublishIncompleteException()
+    public NatsJSBatchPublishIncompleteException()
         : base("Batch publish is incomplete and was abandoned")
     {
     }

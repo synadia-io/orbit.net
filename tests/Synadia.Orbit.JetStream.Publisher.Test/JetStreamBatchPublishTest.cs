@@ -41,7 +41,7 @@ public class JetStreamBatchPublishTest
             ct);
 
         // Create a batch publisher
-        var batch = new BatchPublisher(js);
+        await using var batch = new NatsJSBatchPublisher(js);
 
         // Add messages to the batch
         await batch.AddAsync($"{subject}.1", "message 1"u8.ToArray(), cancellationToken: ct);
@@ -72,7 +72,7 @@ public class JetStreamBatchPublishTest
         Assert.True(batch.IsClosed);
 
         // Verify we can't add more messages
-        await Assert.ThrowsAsync<BatchClosedException>(
+        await Assert.ThrowsAsync<NatsJSBatchClosedException>(
             async () => await batch.AddAsync($"{subject}.4", "message 4"u8.ToArray(), cancellationToken: ct));
 
         // Verify we have 3 messages in the stream
@@ -113,13 +113,13 @@ public class JetStreamBatchPublishTest
 
         await Task.Delay(TimeSpan.FromSeconds(1), ct);
 
-        var batch = new BatchPublisher(js);
+        await using var batch = new NatsJSBatchPublisher(js);
 
         // Add first message with expected last sequence
         await batch.AddAsync(
             $"{subject}.1",
             "message 1"u8.ToArray(),
-            new BatchMsgOpts { LastSeq = 5, Stream = streamName },
+            new NatsJSBatchMsgOpts { LastSeq = 5, Stream = streamName },
             ct);
 
         // Add second message with expected stream
@@ -129,7 +129,7 @@ public class JetStreamBatchPublishTest
                 Subject = $"{subject}.2",
                 Data = "message 2"u8.ToArray(),
             },
-            new BatchMsgOpts { Stream = streamName },
+            new NatsJSBatchMsgOpts { Stream = streamName },
             ct);
 
         // Commit third message
@@ -161,13 +161,13 @@ public class JetStreamBatchPublishTest
             new StreamConfig(streamName, [$"{subject}.>"]) { AllowAtomicPublish = true },
             ct);
 
-        var batch = new BatchPublisher(js);
+        await using var batch = new NatsJSBatchPublisher(js);
 
         // First message with ExpectLastSequence should work
         await batch.AddAsync(
             $"{subject}.1",
             "message 1"u8.ToArray(),
-            new BatchMsgOpts { LastSeq = 0 },
+            new NatsJSBatchMsgOpts { LastSeq = 0 },
             ct);
 
         var ack = await batch.CommitAsync($"{subject}.2", "message 2"u8.ToArray(), cancellationToken: ct);
@@ -194,14 +194,14 @@ public class JetStreamBatchPublishTest
             new StreamConfig(streamName, [$"{subject}.>"]) { AllowAtomicPublish = true },
             ct);
 
-        var batch = new BatchPublisher(js);
+        await using var batch = new NatsJSBatchPublisher(js);
 
         // First message with invalid ExpectLastSequence should fail
         var ex = await Assert.ThrowsAsync<NatsJSException>(
             async () => await batch.CommitAsync(
                 $"{subject}.1",
                 "message 1"u8.ToArray(),
-                new BatchMsgOpts { LastSeq = 5 },
+                new NatsJSBatchMsgOpts { LastSeq = 5 },
                 ct));
 
         _output.WriteLine($"Exception: {ex.Message}");
@@ -226,7 +226,7 @@ public class JetStreamBatchPublishTest
             new StreamConfig(streamName, [$"{subject}.>"]) { AllowAtomicPublish = true },
             ct);
 
-        var batch = new BatchPublisher(js);
+        await using var batch = new NatsJSBatchPublisher(js);
 
         // Add messages to the batch
         await batch.AddAsync($"{subject}.1", "message 1"u8.ToArray(), cancellationToken: ct);
@@ -242,17 +242,17 @@ public class JetStreamBatchPublishTest
         batch.Discard();
 
         // Try discarding again
-        Assert.Throws<BatchClosedException>(() => batch.Discard());
+        Assert.Throws<NatsJSBatchClosedException>(() => batch.Discard());
 
         // Verify batch is closed
         Assert.True(batch.IsClosed);
 
         // Verify we can't add more messages
-        await Assert.ThrowsAsync<BatchClosedException>(
+        await Assert.ThrowsAsync<NatsJSBatchClosedException>(
             async () => await batch.AddAsync($"{subject}.4", "message 4"u8.ToArray(), cancellationToken: ct));
 
         // Verify we can't commit
-        await Assert.ThrowsAsync<BatchClosedException>(
+        await Assert.ThrowsAsync<NatsJSBatchClosedException>(
             async () => await batch.CommitAsync($"{subject}.5", "message 5"u8.ToArray(), cancellationToken: ct));
 
         // Verify we have 0 messages in the stream
@@ -290,7 +290,7 @@ public class JetStreamBatchPublishTest
             };
         }
 
-        var ack = await JetStreamBatchPublish.PublishMsgBatchAsync(js, messages, cancellationToken: ct);
+        var ack = await js.PublishMsgBatchAsync(messages, cancellationToken: ct);
 
         Assert.NotNull(ack);
         Assert.Equal(count, ack.BatchSize);
@@ -330,8 +330,8 @@ public class JetStreamBatchPublishTest
             };
         }
 
-        await Assert.ThrowsAsync<BatchPublishExceedsLimitException>(
-            async () => await JetStreamBatchPublish.PublishMsgBatchAsync(js, messages, cancellationToken: ct));
+        await Assert.ThrowsAsync<NatsJSBatchPublishExceedsLimitException>(
+            async () => await js.PublishMsgBatchAsync(messages, cancellationToken: ct));
     }
 
     [Fact]
@@ -354,16 +354,16 @@ public class JetStreamBatchPublishTest
             ct);
 
         // Create batch publisher with flow control enabled
-        var batch = new BatchPublisher(
+        await using var batch = new NatsJSBatchPublisher(
             js,
-            new BatchFlowControl
+            new NatsJSBatchFlowControl
             {
                 AckFirst = true,
                 AckTimeout = TimeSpan.FromSeconds(5),
             });
 
         // First message should fail with batch publish not enabled
-        await Assert.ThrowsAsync<BatchPublishNotEnabledException>(
+        await Assert.ThrowsAsync<NatsJSBatchPublishNotEnabledException>(
             async () => await batch.AddAsync($"{subject}.1", "message 1"u8.ToArray(), cancellationToken: ct));
     }
 
@@ -386,7 +386,7 @@ public class JetStreamBatchPublishTest
             new StreamConfig(streamName, [$"{subject}.>"]) { AllowAtomicPublish = true },
             ct);
 
-        var batch = new BatchPublisher(js);
+        await using var batch = new NatsJSBatchPublisher(js);
 
         // Add messages until we reach limit (999 + 1 commit = 1000)
         for (int i = 0; i < 999; i++)
@@ -399,7 +399,7 @@ public class JetStreamBatchPublishTest
         Assert.NotNull(ack);
 
         // Try to create another batch and add 1001 messages
-        var batch2 = new BatchPublisher(js);
+        await using var batch2 = new NatsJSBatchPublisher(js);
 
         for (int i = 0; i < 1000; i++)
         {
@@ -407,7 +407,7 @@ public class JetStreamBatchPublishTest
         }
 
         // This should be message 1001 and should fail with exceeds limit error
-        await Assert.ThrowsAsync<BatchPublishExceedsLimitException>(
+        await Assert.ThrowsAsync<NatsJSBatchPublishExceedsLimitException>(
             async () => await batch2.CommitAsync($"{subject}.2", "message 2"u8.ToArray(), cancellationToken: ct));
     }
 
@@ -430,7 +430,7 @@ public class JetStreamBatchPublishTest
             new StreamConfig(streamName, [$"{subject}.>"]) { AllowAtomicPublish = true },
             ct);
 
-        var batch = new BatchPublisher(js);
+        await using var batch = new NatsJSBatchPublisher(js);
 
         // Add a message with unsupported Nats-Msg-Id header
         var headers = new NatsHeaders { { "Nats-Msg-Id", "test-msg-id" } };
@@ -451,7 +451,7 @@ public class JetStreamBatchPublishTest
             // If server didn't reject, this check may not be enforced in this version
             _output.WriteLine("Server did not reject unsupported Nats-Msg-Id header in batch");
         }
-        catch (BatchPublishUnsupportedHeaderException)
+        catch (NatsJSBatchPublishUnsupportedHeaderException)
         {
             // Expected - server enforces the header check
         }
@@ -479,12 +479,12 @@ public class JetStreamBatchPublishTest
         // Create 50 batches (the default max) and add a message to each
         for (int i = 0; i < 50; i++)
         {
-            var b = new BatchPublisher(js);
+            var b = new NatsJSBatchPublisher(js);
             await b.AddAsync($"{subject}.1", "message 1"u8.ToArray(), cancellationToken: ct);
         }
 
         // Now create one more batch - the 51st should fail
-        var batch = new BatchPublisher(js);
+        await using var batch = new NatsJSBatchPublisher(js);
 
         try
         {
@@ -492,10 +492,10 @@ public class JetStreamBatchPublishTest
             await batch.AddAsync($"{subject}.1", "message 1"u8.ToArray(), cancellationToken: ct);
 
             // If Add didn't fail, Commit should fail
-            await Assert.ThrowsAsync<BatchPublishIncompleteException>(
+            await Assert.ThrowsAsync<NatsJSBatchPublishIncompleteException>(
                 async () => await batch.CommitAsync($"{subject}.2", "message 2"u8.ToArray(), cancellationToken: ct));
         }
-        catch (BatchPublishIncompleteException)
+        catch (NatsJSBatchPublishIncompleteException)
         {
             // This is also expected - too many outstanding batches
         }
@@ -521,9 +521,9 @@ public class JetStreamBatchPublishTest
             ct);
 
         // Create batch publisher with flow control
-        var batch = new BatchPublisher(
+        await using var batch = new NatsJSBatchPublisher(
             js,
-            new BatchFlowControl
+            new NatsJSBatchFlowControl
             {
                 AckFirst = true,
                 AckEvery = 10,

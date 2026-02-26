@@ -8,7 +8,7 @@ namespace Synadia.Orbit.JetStream.Publisher;
 /// <summary>
 /// Exception thrown when batch publish sequence is missing.
 /// </summary>
-public class BatchPublishMissingSeqException : NatsJSException
+public class NatsJSBatchPublishMissingSeqException : NatsJSException
 {
     /// <summary>
     /// Error code for missing batch sequence.
@@ -16,9 +16,9 @@ public class BatchPublishMissingSeqException : NatsJSException
     public const int ErrorCode = 10175;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="BatchPublishMissingSeqException"/> class.
+    /// Initializes a new instance of the <see cref="NatsJSBatchPublishMissingSeqException"/> class.
     /// </summary>
-    public BatchPublishMissingSeqException()
+    public NatsJSBatchPublishMissingSeqException()
         : base("Batch publish sequence is missing")
     {
     }

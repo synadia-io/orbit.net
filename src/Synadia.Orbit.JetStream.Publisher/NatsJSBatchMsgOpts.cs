@@ -6,7 +6,7 @@ namespace Synadia.Orbit.JetStream.Publisher;
 /// <summary>
 /// Options for configuring individual batch messages.
 /// </summary>
-public record BatchMsgOpts
+public record NatsJSBatchMsgOpts
 {
     /// <summary>
     /// Gets the per message TTL for batch messages.

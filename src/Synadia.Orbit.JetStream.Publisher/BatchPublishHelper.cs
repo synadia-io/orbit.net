@@ -15,22 +15,22 @@ internal static class BatchPublishHelper
     {
         switch (error.ErrCode)
         {
-            case BatchPublishNotEnabledException.ErrorCode:
-                throw new BatchPublishNotEnabledException();
-            case BatchPublishIncompleteException.ErrorCode:
-                throw new BatchPublishIncompleteException();
-            case BatchPublishMissingSeqException.ErrorCode:
-                throw new BatchPublishMissingSeqException();
-            case BatchPublishUnsupportedHeaderException.ErrorCode:
-                throw new BatchPublishUnsupportedHeaderException();
-            case BatchPublishExceedsLimitException.ErrorCode:
-                throw new BatchPublishExceedsLimitException();
+            case NatsJSBatchPublishNotEnabledException.ErrorCode:
+                throw new NatsJSBatchPublishNotEnabledException();
+            case NatsJSBatchPublishIncompleteException.ErrorCode:
+                throw new NatsJSBatchPublishIncompleteException();
+            case NatsJSBatchPublishMissingSeqException.ErrorCode:
+                throw new NatsJSBatchPublishMissingSeqException();
+            case NatsJSBatchPublishUnsupportedHeaderException.ErrorCode:
+                throw new NatsJSBatchPublishUnsupportedHeaderException();
+            case NatsJSBatchPublishExceedsLimitException.ErrorCode:
+                throw new NatsJSBatchPublishExceedsLimitException();
             default:
                 throw new NatsJSException($"Batch publish error: {error.Description}");
         }
     }
 
-    internal static void ApplyBatchMessageOptions(NatsHeaders headers, BatchMsgOpts? opts)
+    internal static void ApplyBatchMessageOptions(NatsHeaders headers, NatsJSBatchMsgOpts? opts)
     {
         if (opts == null)
         {
