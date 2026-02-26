@@ -107,7 +107,7 @@ public static class NatsPcgElasticExtensions
     /// <param name="config">Optional consumer configuration overrides.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>An async enumerable of messages from the consumer group.</returns>
-    public static async IAsyncEnumerable<NatsPcgMsg<T>> ConsumePcgElasticAsync<T>(
+    public static async IAsyncEnumerable<INatsJSMsg<T>> ConsumePcgElasticAsync<T>(
         this INatsJSContext js,
         string streamName,
         string consumerGroupName,

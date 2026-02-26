@@ -11,7 +11,7 @@ namespace Synadia.Orbit.PCGroups;
 /// Wraps <see cref="NatsJSMsg{T}"/> and provides a subject with the partition prefix stripped.
 /// </summary>
 /// <typeparam name="T">The type of the message data.</typeparam>
-public readonly struct NatsPcgMsg<T>
+public readonly struct NatsPcgMsg<T> : INatsJSMsg<T>
 {
     private readonly NatsJSMsg<T> _msg;
     private readonly string _subject;
@@ -62,10 +62,18 @@ public readonly struct NatsPcgMsg<T>
     /// </summary>
     public NatsException? Error => _msg.Error;
 
+    /// <inheritdoc />
+    public INatsConnection? Connection => _msg.Connection;
+
     /// <summary>
     /// Throws an exception if the message contains any errors.
     /// </summary>
     public void EnsureSuccess() => _msg.EnsureSuccess();
+
+    /// <inheritdoc />
+    [Obsolete("ReplyAsync is not valid when using JetStream. The reply message will never reach the Requestor as NATS will reply to all JetStream publish by default.")]
+    public ValueTask ReplyAsync(NatsHeaders? headers = null, string? replyTo = null, NatsPubOpts? opts = null, CancellationToken cancellationToken = default(CancellationToken))
+        => _msg.ReplyAsync(headers, replyTo, opts, cancellationToken);
 
     /// <summary>
     /// Acknowledges the message was completely handled.
