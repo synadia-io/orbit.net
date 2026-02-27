@@ -7,6 +7,7 @@
 // dotnet add package Synadia.Orbit.PCGroups --prerelease
 using System.Threading.Channels;
 using NATS.Client.Core;
+using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
 using NATS.Net;
 using Synadia.Orbit.PCGroups;
@@ -117,7 +118,7 @@ public class ExamplePCGroups
                 Console.WriteLine("Published 5 events, consuming with 3 workers...");
 
                 // Use a channel to aggregate messages from all workers
-                var channel = Channel.CreateUnbounded<(string Worker, NatsPcgMsg<Event> Msg)>();
+                var channel = Channel.CreateUnbounded<(string Worker, INatsJSMsg<Event> Msg)>();
                 using var cts = new CancellationTokenSource();
 
                 // Start a consumer task for each worker
