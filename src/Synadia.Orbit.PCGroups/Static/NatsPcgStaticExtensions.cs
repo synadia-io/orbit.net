@@ -100,7 +100,7 @@ public static class NatsPcgStaticExtensions
     /// <param name="config">Optional consumer configuration overrides.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>An async enumerable of messages from the consumer group.</returns>
-    public static async IAsyncEnumerable<NatsPcgMsg<T>> ConsumePcgStaticAsync<T>(
+    public static async IAsyncEnumerable<INatsJSMsg<T>> ConsumePcgStaticAsync<T>(
         this INatsJSContext js,
         string streamName,
         string consumerGroupName,
