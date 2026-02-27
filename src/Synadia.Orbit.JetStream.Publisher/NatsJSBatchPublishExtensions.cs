@@ -21,19 +21,24 @@ public static class NatsJSBatchPublishExtensions
     /// <returns>The batch acknowledgment from the server.</returns>
     public static async Task<NatsJSBatchAck> PublishMsgBatchAsync(
         this INatsJSContext js,
-        NatsMsg<byte[]>[] messages,
+        IReadOnlyList<NatsMsg<byte[]>> messages,
         NatsJSBatchFlowControl? flowControl = null,
         CancellationToken cancellationToken = default)
     {
-        if (messages.Length == 0)
+        if (messages.Count == 0)
         {
             throw new ArgumentException("No messages to publish", nameof(messages));
+        }
+
+        if (messages.Count > NatsJSBatchPublisher.MaxBatchSize)
+        {
+            throw new NatsJSBatchPublishExceedsLimitException();
         }
 
         var batchId = Nuid.NewNuid();
         var fc = flowControl ?? new NatsJSBatchFlowControl();
 
-        for (int i = 0; i < messages.Length; i++)
+        for (int i = 0; i < messages.Count; i++)
         {
             var msg = messages[i];
             var headers = msg.Headers ?? new NatsHeaders();
@@ -45,7 +50,7 @@ public static class NatsJSBatchPublishExtensions
             var msgToSend = msg with { Headers = headers };
 
             // Add all but last message to the batch
-            if (i < messages.Length - 1)
+            if (i < messages.Count - 1)
             {
                 // Determine if we need flow control for this message
                 bool needsAck = false;
@@ -97,15 +102,14 @@ public static class NatsJSBatchPublishExtensions
             headers[NatsJSBatchHeaders.BatchCommit] = "1";
             var commitMsg = msgToSend with { Headers = headers };
 
-            // Apply default timeout if no cancellation is set, matching Go's wrapContextWithoutDeadline behavior.
+            // Apply default timeout, matching Go's wrapContextWithoutDeadline behavior.
             using var commitCts = BatchPublishHelper.CreateCommitCancellationTokenSource(cancellationToken, js.Opts.RequestTimeout);
-            var commitToken = commitCts?.Token ?? cancellationToken;
 
             var commitResponse = await js.Connection.RequestAsync<byte[], byte[]>(
                 commitMsg.Subject,
                 commitMsg.Data,
                 headers: commitMsg.Headers,
-                cancellationToken: commitToken).ConfigureAwait(false);
+                cancellationToken: commitCts.Token).ConfigureAwait(false);
 
             var batchResponse = BatchPublishHelper.DeserializeAckResponse(commitResponse.Data);
 
@@ -117,7 +121,7 @@ public static class NatsJSBatchPublishExtensions
             if (batchResponse == null ||
                 string.IsNullOrEmpty(batchResponse.Stream) ||
                 batchResponse.BatchId != batchId ||
-                batchResponse.BatchSize != messages.Length)
+                batchResponse.BatchSize != messages.Count)
             {
                 throw new NatsJSInvalidBatchAckException();
             }

@@ -9,8 +9,13 @@ namespace Synadia.Orbit.JetStream.Publisher;
 /// <summary>
 /// Implementation of batch publisher for publishing messages to a stream in batches.
 /// </summary>
-public class NatsJSBatchPublisher : INatsJSBatchPublisher
+public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
 {
+    /// <summary>
+    /// Maximum number of messages allowed in a single batch (server-enforced limit).
+    /// </summary>
+    internal const int MaxBatchSize = 1000;
+
     private readonly INatsJSContext _js;
     private readonly string _batchId;
     private readonly NatsJSBatchFlowControl _flowControl;
@@ -76,6 +81,11 @@ public class NatsJSBatchPublisher : INatsJSBatchPublisher
             if (_closed)
             {
                 throw new NatsJSBatchClosedException();
+            }
+
+            if (_sequence >= MaxBatchSize)
+            {
+                throw new NatsJSBatchPublishExceedsLimitException();
             }
 
             _sequence++;
@@ -162,6 +172,11 @@ public class NatsJSBatchPublisher : INatsJSBatchPublisher
                 throw new NatsJSBatchClosedException();
             }
 
+            if (_sequence >= MaxBatchSize)
+            {
+                throw new NatsJSBatchPublishExceedsLimitException();
+            }
+
             _sequence++;
             currentSeq = _sequence;
             batchId = _batchId;
@@ -177,16 +192,15 @@ public class NatsJSBatchPublisher : INatsJSBatchPublisher
 
         var msgToSend = msg with { Headers = headers };
 
-        // Apply default timeout if no cancellation is set, matching Go's wrapContextWithoutDeadline behavior.
+        // Apply default timeout, matching Go's wrapContextWithoutDeadline behavior.
         using var cts = BatchPublishHelper.CreateCommitCancellationTokenSource(cancellationToken, _js.Opts.RequestTimeout);
-        var effectiveToken = cts?.Token ?? cancellationToken;
 
         // Request with ack
         var response = await _js.Connection.RequestAsync<byte[], byte[]>(
             msgToSend.Subject,
             msgToSend.Data,
             headers: msgToSend.Headers,
-            cancellationToken: effectiveToken).ConfigureAwait(false);
+            cancellationToken: cts.Token).ConfigureAwait(false);
 
         lock (_lock)
         {

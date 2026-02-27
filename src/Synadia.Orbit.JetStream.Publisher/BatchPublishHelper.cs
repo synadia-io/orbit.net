@@ -71,14 +71,10 @@ internal static class BatchPublishHelper
         }
     }
 
-    internal static CancellationTokenSource? CreateCommitCancellationTokenSource(CancellationToken cancellationToken, TimeSpan requestTimeout)
+    internal static CancellationTokenSource CreateCommitCancellationTokenSource(CancellationToken cancellationToken, TimeSpan requestTimeout)
     {
-        if (cancellationToken.CanBeCanceled)
-        {
-            return null;
-        }
-
-        var cts = new CancellationTokenSource(requestTimeout);
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(requestTimeout);
         return cts;
     }
 
