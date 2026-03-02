@@ -6,6 +6,7 @@
 using System.Text.Json;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
+using NATS.Client.JetStream.Models;
 
 namespace Synadia.Orbit.JetStream.Publisher;
 
@@ -13,21 +14,12 @@ internal static class BatchPublishHelper
 {
     internal static void ThrowBatchPublishException(BatchPublishErrorResponse error)
     {
-        switch (error.ErrCode)
+        throw new NatsJSBatchPublishException(new ApiError
         {
-            case NatsJSBatchPublishNotEnabledException.ErrorCode:
-                throw new NatsJSBatchPublishNotEnabledException();
-            case NatsJSBatchPublishIncompleteException.ErrorCode:
-                throw new NatsJSBatchPublishIncompleteException();
-            case NatsJSBatchPublishMissingSeqException.ErrorCode:
-                throw new NatsJSBatchPublishMissingSeqException();
-            case NatsJSBatchPublishUnsupportedHeaderException.ErrorCode:
-                throw new NatsJSBatchPublishUnsupportedHeaderException();
-            case NatsJSBatchPublishExceedsLimitException.ErrorCode:
-                throw new NatsJSBatchPublishExceedsLimitException();
-            default:
-                throw new NatsJSException($"Batch publish error: {error.Description}");
-        }
+            Code = error.Code,
+            ErrCode = error.ErrCode,
+            Description = error.Description,
+        });
     }
 
     internal static void ApplyBatchMessageOptions(NatsHeaders headers, NatsJSBatchMsgOpts? opts)
@@ -73,9 +65,13 @@ internal static class BatchPublishHelper
 
     internal static CancellationTokenSource CreateCommitCancellationTokenSource(CancellationToken cancellationToken, TimeSpan requestTimeout)
     {
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(requestTimeout);
-        return cts;
+        if (!cancellationToken.CanBeCanceled)
+        {
+            var cts = new CancellationTokenSource(requestTimeout);
+            return cts;
+        }
+
+        return CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
     }
 
     internal static BatchPublishApiResponse? DeserializeApiResponse(byte[]? data)

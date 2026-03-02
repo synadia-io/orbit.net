@@ -3,6 +3,7 @@
 
 using NATS.Client.Core;
 using NATS.Client.JetStream;
+using NATS.Client.JetStream.Models;
 
 namespace Synadia.Orbit.JetStream.Publisher;
 
@@ -32,111 +33,16 @@ public static class NatsJSBatchPublishExtensions
 
         if (messages.Count > NatsJSBatchPublisher.MaxBatchSize)
         {
-            throw new NatsJSBatchPublishExceedsLimitException();
+            throw new NatsJSBatchPublishException(new ApiError { Code = 400, ErrCode = NatsJSBatchPublishException.ErrCodeExceedsLimit, Description = "Batch publish sequence exceeds server limit" });
         }
 
-        var batchId = Nuid.NewNuid();
-        var fc = flowControl ?? new NatsJSBatchFlowControl();
+        await using var publisher = new NatsJSBatchPublisher(js, flowControl);
 
-        for (int i = 0; i < messages.Count; i++)
+        for (int i = 0; i < messages.Count - 1; i++)
         {
-            var msg = messages[i];
-            var headers = msg.Headers ?? new NatsHeaders();
-
-            headers.Remove(NatsJSBatchHeaders.BatchCommit);
-            headers[NatsJSBatchHeaders.BatchId] = batchId;
-            headers[NatsJSBatchHeaders.BatchSeq] = (i + 1).ToString();
-
-            var msgToSend = msg with { Headers = headers };
-
-            // Add all but last message to the batch
-            if (i < messages.Count - 1)
-            {
-                // Determine if we need flow control for this message
-                bool needsAck = false;
-                int seq = i + 1;
-                if (fc.AckFirst && seq == 1)
-                {
-                    needsAck = true;
-                }
-                else if (fc.AckEvery > 0 && seq % fc.AckEvery == 0)
-                {
-                    needsAck = true;
-                }
-
-                if (!needsAck)
-                {
-                    await js.Connection.PublishAsync(msgToSend.Subject, msgToSend.Data, headers: msgToSend.Headers, cancellationToken: cancellationToken).ConfigureAwait(false);
-                    continue;
-                }
-
-                using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                cts.CancelAfter(fc.AckTimeout);
-
-                try
-                {
-                    var response = await js.Connection.RequestAsync<byte[], byte[]>(
-                        msgToSend.Subject,
-                        msgToSend.Data,
-                        headers: msgToSend.Headers,
-                        cancellationToken: cts.Token).ConfigureAwait(false);
-
-                    if (response.Data?.Length > 0)
-                    {
-                        var apiResponse = BatchPublishHelper.DeserializeApiResponse(response.Data);
-                        if (apiResponse?.Error != null)
-                        {
-                            BatchPublishHelper.ThrowBatchPublishException(apiResponse.Error);
-                        }
-                    }
-                }
-                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-                {
-                    throw new TimeoutException($"Batch message {seq} ack failed: timeout after {fc.AckTimeout}");
-                }
-
-                continue;
-            }
-
-            // Commit the batch on the last message
-            headers[NatsJSBatchHeaders.BatchCommit] = "1";
-            var commitMsg = msgToSend with { Headers = headers };
-
-            // Apply default timeout, matching Go's wrapContextWithoutDeadline behavior.
-            using var commitCts = BatchPublishHelper.CreateCommitCancellationTokenSource(cancellationToken, js.Opts.RequestTimeout);
-
-            var commitResponse = await js.Connection.RequestAsync<byte[], byte[]>(
-                commitMsg.Subject,
-                commitMsg.Data,
-                headers: commitMsg.Headers,
-                cancellationToken: commitCts.Token).ConfigureAwait(false);
-
-            var batchResponse = BatchPublishHelper.DeserializeAckResponse(commitResponse.Data);
-
-            if (batchResponse?.Error != null)
-            {
-                BatchPublishHelper.ThrowBatchPublishException(batchResponse.Error);
-            }
-
-            if (batchResponse == null ||
-                string.IsNullOrEmpty(batchResponse.Stream) ||
-                batchResponse.BatchId != batchId ||
-                batchResponse.BatchSize != messages.Count)
-            {
-                throw new NatsJSInvalidBatchAckException();
-            }
-
-            return new NatsJSBatchAck
-            {
-                Stream = batchResponse.Stream!,
-                Sequence = batchResponse.Seq,
-                Domain = batchResponse.Domain,
-                Value = batchResponse.Value,
-                BatchId = batchResponse.BatchId!,
-                BatchSize = batchResponse.BatchSize,
-            };
+            await publisher.AddMsgAsync(messages[i], cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
-        throw new InvalidOperationException("Unreachable code");
+        return await publisher.CommitMsgAsync(messages[messages.Count - 1], cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 }

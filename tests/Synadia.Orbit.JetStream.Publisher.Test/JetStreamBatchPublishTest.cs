@@ -197,7 +197,7 @@ public class JetStreamBatchPublishTest
         await using var batch = new NatsJSBatchPublisher(js);
 
         // First message with invalid ExpectLastSequence should fail
-        var ex = await Assert.ThrowsAsync<NatsJSException>(
+        var ex = await Assert.ThrowsAsync<NatsJSBatchPublishException>(
             async () => await batch.CommitAsync(
                 $"{subject}.1",
                 "message 1"u8.ToArray(),
@@ -330,8 +330,9 @@ public class JetStreamBatchPublishTest
             };
         }
 
-        await Assert.ThrowsAsync<NatsJSBatchPublishExceedsLimitException>(
+        var ex = await Assert.ThrowsAsync<NatsJSBatchPublishException>(
             async () => await js.PublishMsgBatchAsync(messages, cancellationToken: ct));
+        Assert.Equal(NatsJSBatchPublishException.ErrCodeExceedsLimit, ex.Error.ErrCode);
     }
 
     [Fact]
@@ -363,8 +364,9 @@ public class JetStreamBatchPublishTest
             });
 
         // First message should fail with batch publish not enabled
-        await Assert.ThrowsAsync<NatsJSBatchPublishNotEnabledException>(
+        var ex = await Assert.ThrowsAsync<NatsJSBatchPublishException>(
             async () => await batch.AddAsync($"{subject}.1", "message 1"u8.ToArray(), cancellationToken: ct));
+        Assert.Equal(NatsJSBatchPublishException.ErrCodeNotEnabled, ex.Error.ErrCode);
     }
 
     [Fact]
@@ -407,8 +409,9 @@ public class JetStreamBatchPublishTest
         }
 
         // This should be message 1001 and should fail with exceeds limit error
-        await Assert.ThrowsAsync<NatsJSBatchPublishExceedsLimitException>(
+        var ex = await Assert.ThrowsAsync<NatsJSBatchPublishException>(
             async () => await batch2.CommitAsync($"{subject}.2", "message 2"u8.ToArray(), cancellationToken: ct));
+        Assert.Equal(NatsJSBatchPublishException.ErrCodeExceedsLimit, ex.Error.ErrCode);
     }
 
     [Fact]
@@ -451,7 +454,7 @@ public class JetStreamBatchPublishTest
             // If server didn't reject, this check may not be enforced in this version
             _output.WriteLine("Server did not reject unsupported Nats-Msg-Id header in batch");
         }
-        catch (NatsJSBatchPublishUnsupportedHeaderException)
+        catch (NatsJSBatchPublishException)
         {
             // Expected - server enforces the header check
         }
@@ -492,10 +495,11 @@ public class JetStreamBatchPublishTest
             await batch.AddAsync($"{subject}.1", "message 1"u8.ToArray(), cancellationToken: ct);
 
             // If Add didn't fail, Commit should fail
-            await Assert.ThrowsAsync<NatsJSBatchPublishIncompleteException>(
+            var ex = await Assert.ThrowsAsync<NatsJSBatchPublishException>(
                 async () => await batch.CommitAsync($"{subject}.2", "message 2"u8.ToArray(), cancellationToken: ct));
+            Assert.Equal(NatsJSBatchPublishException.ErrCodeIncomplete, ex.Error.ErrCode);
         }
-        catch (NatsJSBatchPublishIncompleteException)
+        catch (NatsJSBatchPublishException)
         {
             // This is also expected - too many outstanding batches
         }
