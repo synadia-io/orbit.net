@@ -69,6 +69,11 @@ public static class NatsPcgElasticExtensions
 
     /// <summary>
     /// Creates an elastic consumer group with multiple subject filters.
+    /// <para>
+    /// <b>Compatibility note:</b> Multi-filter support and the <c>[-1]</c> sentinel are .NET-only extensions
+    /// not yet supported by other Orbit implementations. Configs created with these features may not be
+    /// correctly interpreted by clients using other implementations.
+    /// </para>
     /// </summary>
     /// <param name="js">JetStream context.</param>
     /// <param name="streamName">Name of the source stream.</param>

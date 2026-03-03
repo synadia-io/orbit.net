@@ -24,7 +24,12 @@ public sealed record NatsPcgElasticConfig
 
     /// <summary>
     /// Gets the wildcard positions used for partitioning (1-indexed).
-    /// Use <c>[-1]</c> to partition by the entire subject string.
+    /// Use <c>[-1]</c> to partition by the entire subject string (server hashes the full subject via FNV-32a).
+    /// <para>
+    /// <b>Compatibility note:</b> The <c>[-1]</c> sentinel is a .NET-only extension not yet supported by
+    /// other Orbit implementations. Clients using other implementations that read this config will not
+    /// recognize the sentinel and may produce incorrect behavior.
+    /// </para>
     /// </summary>
     [JsonPropertyName("partitioning_wildcards")]
     public required int[] PartitioningWildcards { get; init; }
@@ -32,6 +37,11 @@ public sealed record NatsPcgElasticConfig
     /// <summary>
     /// Gets the optional list of subject filters for the consumer group.
     /// When set, takes precedence over <see cref="Filter"/>.
+    /// <para>
+    /// <b>Compatibility note:</b> Multi-filter support is a .NET-only extension not yet supported by
+    /// other Orbit implementations. Clients using other implementations will only see the single
+    /// <see cref="Filter"/> field and may not consume from all configured subjects.
+    /// </para>
     /// </summary>
     [JsonPropertyName("filters")]
     public string[]? Filters { get; init; }

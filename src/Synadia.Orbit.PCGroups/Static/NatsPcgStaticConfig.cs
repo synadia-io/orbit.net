@@ -25,6 +25,11 @@ public sealed record NatsPcgStaticConfig
     /// <summary>
     /// Gets the optional list of subject filters for the consumer group.
     /// When set, takes precedence over <see cref="Filter"/>.
+    /// <para>
+    /// <b>Compatibility note:</b> Multi-filter support is a .NET-only extension not yet supported by
+    /// other Orbit implementations. Clients using other implementations will only see the single
+    /// <see cref="Filter"/> field and may not consume from all configured subjects.
+    /// </para>
     /// </summary>
     [JsonPropertyName("filters")]
     public string[]? Filters { get; init; }
