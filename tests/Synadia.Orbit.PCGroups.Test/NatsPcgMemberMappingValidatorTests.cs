@@ -291,4 +291,116 @@ public class NatsPcgMemberMappingValidatorTests
         // Filter has 3 wildcards, using only 2 for partitioning
         NatsPcgMemberMappingValidator.ValidateFilterAndWildcards("foo.*.*.*.>", new[] { 1, 3 });
     }
+
+    [Fact]
+    public void ValidateFilterAndWildcards_SentinelMinusOne_NoException()
+    {
+        // [-1] sentinel: partition by full subject
+        NatsPcgMemberMappingValidator.ValidateFilterAndWildcards("foo.*", new[] { -1 });
+    }
+
+    [Fact]
+    public void ValidateFilterAndWildcards_SentinelMinusOneMixedWithOther_ThrowsException()
+    {
+        // [-1] must be the sole element
+        var ex = Assert.Throws<NatsPcgConfigurationException>(() =>
+            NatsPcgMemberMappingValidator.ValidateFilterAndWildcards("foo.*.*.>", new[] { -1, 1 }));
+
+        Assert.Contains("sole element", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateFiltersAndWildcards_ValidMultipleFilters_NoException()
+    {
+        NatsPcgMemberMappingValidator.ValidateFiltersAndWildcards(
+            new[] { "orders.*", "refunds.*" },
+            new[] { 1 });
+    }
+
+    [Fact]
+    public void ValidateFiltersAndWildcards_NullFilters_ThrowsException()
+    {
+        var ex = Assert.Throws<NatsPcgConfigurationException>(() =>
+            NatsPcgMemberMappingValidator.ValidateFiltersAndWildcards(null!, new[] { 1 }));
+
+        Assert.Contains("at least one element", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateFiltersAndWildcards_EmptyFilters_ThrowsException()
+    {
+        var ex = Assert.Throws<NatsPcgConfigurationException>(() =>
+            NatsPcgMemberMappingValidator.ValidateFiltersAndWildcards(Array.Empty<string>(), new[] { 1 }));
+
+        Assert.Contains("at least one element", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateFiltersAndWildcards_FilterWithoutWildcard_ThrowsException()
+    {
+        var ex = Assert.Throws<NatsPcgConfigurationException>(() =>
+            NatsPcgMemberMappingValidator.ValidateFiltersAndWildcards(
+                new[] { "orders.*", "refunds.bar" },
+                new[] { 1 }));
+
+        Assert.Contains("at least one '*' wildcard", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateFiltersAndWildcards_SentinelMinusOne_NoException()
+    {
+        NatsPcgMemberMappingValidator.ValidateFiltersAndWildcards(
+            new[] { "orders.*", "refunds.*" },
+            new[] { -1 });
+    }
+
+    [Fact]
+    public void ValidateFiltersAndWildcards_SentinelMinusOneMixed_ThrowsException()
+    {
+        var ex = Assert.Throws<NatsPcgConfigurationException>(() =>
+            NatsPcgMemberMappingValidator.ValidateFiltersAndWildcards(
+                new[] { "orders.*.*" },
+                new[] { -1, 1 }));
+
+        Assert.Contains("sole element", ex.Message);
+    }
+
+    [Fact]
+    public void ResolveWildcardPositions_ExplicitPositions_ReturnsSame()
+    {
+        var result = NatsPcgMemberMappingValidator.ResolveWildcardPositions("foo.*.*.>", new[] { 1, 2 });
+        Assert.Equal(new[] { 1, 2 }, result);
+    }
+
+    [Fact]
+    public void ResolveWildcardPositions_SentinelMinusOne_ReturnsAllPositions()
+    {
+        var result = NatsPcgMemberMappingValidator.ResolveWildcardPositions("foo.*.*.>", new[] { -1 });
+        Assert.Equal(new[] { 1, 2 }, result);
+    }
+
+    [Fact]
+    public void ResolveWildcardPositions_SentinelMinusOne_SingleWildcard()
+    {
+        var result = NatsPcgMemberMappingValidator.ResolveWildcardPositions("foo.*", new[] { -1 });
+        Assert.Equal(new[] { 1 }, result);
+    }
+
+    [Fact]
+    public void IsPartitionByFullSubject_SentinelMinusOne_ReturnsTrue()
+    {
+        Assert.True(NatsPcgMemberMappingValidator.IsPartitionByFullSubject(new[] { -1 }));
+    }
+
+    [Fact]
+    public void IsPartitionByFullSubject_ExplicitPositions_ReturnsFalse()
+    {
+        Assert.False(NatsPcgMemberMappingValidator.IsPartitionByFullSubject(new[] { 1 }));
+    }
+
+    [Fact]
+    public void IsPartitionByFullSubject_NullArray_ReturnsFalse()
+    {
+        Assert.False(NatsPcgMemberMappingValidator.IsPartitionByFullSubject(null!));
+    }
 }

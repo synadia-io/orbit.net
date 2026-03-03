@@ -80,7 +80,7 @@ public static class NatsPcgMemberMappingValidator
     /// Validates filter and partitioning wildcards for elastic consumer groups.
     /// </summary>
     /// <param name="filter">The subject filter.</param>
-    /// <param name="partitioningWildcards">The partitioning wildcard positions (1-indexed).</param>
+    /// <param name="partitioningWildcards">The partitioning wildcard positions (1-indexed). Use <c>[-1]</c> to partition by the entire subject.</param>
     /// <exception cref="NatsPcgConfigurationException">Thrown when validation fails.</exception>
     public static void ValidateFilterAndWildcards(string filter, int[] partitioningWildcards)
     {
@@ -90,15 +90,7 @@ public static class NatsPcgMemberMappingValidator
         }
 
         // Count wildcards in filter
-        var filterTokens = filter.Split('.');
-        int numWildcards = 0;
-        foreach (var token in filterTokens)
-        {
-            if (token == "*")
-            {
-                numWildcards++;
-            }
-        }
+        int numWildcards = CountWildcards(filter);
 
         if (numWildcards < 1)
         {
@@ -108,6 +100,17 @@ public static class NatsPcgMemberMappingValidator
         if (partitioningWildcards == null || partitioningWildcards.Length == 0)
         {
             throw new NatsPcgConfigurationException("PartitioningWildcards must contain at least one element");
+        }
+
+        if (IsPartitionByFullSubject(partitioningWildcards))
+        {
+            // [-1] sentinel: must be the sole element
+            if (partitioningWildcards.Length != 1)
+            {
+                throw new NatsPcgConfigurationException("When using -1 (partition by full subject), it must be the sole element in partitioning wildcards");
+            }
+
+            return;
         }
 
         if (partitioningWildcards.Length > numWildcards)
@@ -132,5 +135,103 @@ public static class NatsPcgMemberMappingValidator
                     $"Duplicate partitioning wildcard position {pos}");
             }
         }
+    }
+
+    /// <summary>
+    /// Validates multiple filters and partitioning wildcards for elastic consumer groups.
+    /// </summary>
+    /// <param name="filters">The subject filters.</param>
+    /// <param name="partitioningWildcards">The partitioning wildcard positions (1-indexed). Use <c>[-1]</c> to partition by the entire subject.</param>
+    /// <exception cref="NatsPcgConfigurationException">Thrown when validation fails.</exception>
+    public static void ValidateFiltersAndWildcards(string[] filters, int[] partitioningWildcards)
+    {
+        if (filters == null || filters.Length == 0)
+        {
+            throw new NatsPcgConfigurationException("Filters must contain at least one element");
+        }
+
+        if (partitioningWildcards == null || partitioningWildcards.Length == 0)
+        {
+            throw new NatsPcgConfigurationException("PartitioningWildcards must contain at least one element");
+        }
+
+        if (IsPartitionByFullSubject(partitioningWildcards))
+        {
+            if (partitioningWildcards.Length != 1)
+            {
+                throw new NatsPcgConfigurationException("When using -1 (partition by full subject), it must be the sole element in partitioning wildcards");
+            }
+
+            // Each filter must still have at least one '*' wildcard
+            foreach (var filter in filters)
+            {
+                if (string.IsNullOrEmpty(filter))
+                {
+                    throw new NatsPcgConfigurationException("Filter is required for elastic consumer groups");
+                }
+
+                if (CountWildcards(filter) < 1)
+                {
+                    throw new NatsPcgConfigurationException($"Filter '{filter}' must contain at least one '*' wildcard");
+                }
+            }
+
+            return;
+        }
+
+        // Validate each filter individually against the wildcard positions
+        foreach (var filter in filters)
+        {
+            ValidateFilterAndWildcards(filter, partitioningWildcards);
+        }
+    }
+
+    /// <summary>
+    /// Resolves wildcard positions for a given filter.
+    /// If <paramref name="partitioningWildcards"/> is <c>[-1]</c>, returns all wildcard positions for the filter.
+    /// </summary>
+    /// <param name="filter">The subject filter.</param>
+    /// <param name="partitioningWildcards">The partitioning wildcard positions (1-indexed).</param>
+    /// <returns>The resolved wildcard positions.</returns>
+    public static int[] ResolveWildcardPositions(string filter, int[] partitioningWildcards)
+    {
+        if (IsPartitionByFullSubject(partitioningWildcards))
+        {
+            int numWildcards = CountWildcards(filter);
+            var positions = new int[numWildcards];
+            for (int i = 0; i < numWildcards; i++)
+            {
+                positions[i] = i + 1;
+            }
+
+            return positions;
+        }
+
+        return partitioningWildcards;
+    }
+
+    /// <summary>
+    /// Determines if the partitioning wildcards represent partition-by-full-subject mode.
+    /// </summary>
+    /// <param name="partitioningWildcards">The partitioning wildcard positions.</param>
+    /// <returns>True if the <c>[-1]</c> sentinel is used.</returns>
+    public static bool IsPartitionByFullSubject(int[] partitioningWildcards)
+    {
+        return partitioningWildcards != null && partitioningWildcards.Length >= 1 && partitioningWildcards[0] == -1;
+    }
+
+    private static int CountWildcards(string filter)
+    {
+        var filterTokens = filter.Split('.');
+        int numWildcards = 0;
+        foreach (var token in filterTokens)
+        {
+            if (token == "*")
+            {
+                numWildcards++;
+            }
+        }
+
+        return numWildcards;
     }
 }

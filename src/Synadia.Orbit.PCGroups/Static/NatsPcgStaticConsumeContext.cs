@@ -209,8 +209,8 @@ internal sealed class NatsPcgStaticConsumeContext<T> : IAsyncEnumerable<NatsPcgM
             _config.MemberMappings,
             _memberName);
 
-        // Apply config filter to partition filters
-        var finalFilters = ApplyFilter(filters, _config.Filter);
+        // Apply config filters to partition filters
+        var finalFilters = ApplyFilters(filters, _config.GetEffectiveFilters());
 
         // Each member gets its own consumer (named after consumer group + member)
         var consumerName = $"{_consumerGroupName}-{_memberName}";
@@ -322,19 +322,24 @@ internal sealed class NatsPcgStaticConsumeContext<T> : IAsyncEnumerable<NatsPcgM
         }
     }
 
-    private static string[] ApplyFilter(string[] partitionFilters, string? filter)
+    private static string[] ApplyFilters(string[] partitionFilters, string[]? filters)
     {
-        if (string.IsNullOrEmpty(filter))
+        if (filters == null || filters.Length == 0)
         {
             return partitionFilters;
         }
 
-        var result = new string[partitionFilters.Length];
+        // Cross-product: partitions × filters
+        var result = new string[partitionFilters.Length * filters.Length];
+        int index = 0;
         for (int i = 0; i < partitionFilters.Length; i++)
         {
-            // Replace .> with .{filter}
-            var prefix = partitionFilters[i].Substring(0, partitionFilters[i].Length - 1); // Remove ">"
-            result[i] = $"{prefix}{filter}";
+            // Remove ">" from partition filter to get prefix
+            var prefix = partitionFilters[i].Substring(0, partitionFilters[i].Length - 1);
+            for (int j = 0; j < filters.Length; j++)
+            {
+                result[index++] = $"{prefix}{filters[j]}";
+            }
         }
 
         return result;

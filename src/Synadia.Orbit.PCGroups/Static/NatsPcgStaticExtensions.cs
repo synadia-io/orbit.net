@@ -59,6 +59,48 @@ public static class NatsPcgStaticExtensions
     }
 
     /// <summary>
+    /// Creates a static consumer group with multiple subject filters.
+    /// </summary>
+    /// <param name="js">JetStream context.</param>
+    /// <param name="streamName">Name of the stream to consume from.</param>
+    /// <param name="consumerGroupName">Name of the consumer group.</param>
+    /// <param name="maxNumMembers">Maximum number of members (also the number of partitions).</param>
+    /// <param name="filters">Subject filters for the consumer group.</param>
+    /// <param name="members">Optional list of allowed member names.</param>
+    /// <param name="memberMappings">Optional explicit member-to-partition mappings.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The created configuration.</returns>
+    public static async Task<NatsPcgStaticConfig> CreatePcgStaticAsync(
+        this INatsJSContext js,
+        string streamName,
+        string consumerGroupName,
+        uint maxNumMembers,
+        string[] filters,
+        string[]? members = null,
+        NatsPcgMemberMapping[]? memberMappings = null,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateConfig(maxNumMembers, members, memberMappings);
+
+        var kv = js.Connection.CreateKeyValueStoreContext();
+        var store = await GetOrCreateKvStoreAsync(kv, cancellationToken).ConfigureAwait(false);
+
+        var config = new NatsPcgStaticConfig
+        {
+            MaxMembers = maxNumMembers,
+            Filters = filters,
+            Members = members,
+            MemberMappings = memberMappings,
+        };
+
+        var key = GetKvKey(streamName, consumerGroupName);
+
+        var revision = await store.CreateAsync(key, config, serializer: NatsPcgJsonSerializer<NatsPcgStaticConfig>.Default, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        return config with { Revision = revision };
+    }
+
+    /// <summary>
     /// Gets the configuration for a static consumer group.
     /// </summary>
     /// <param name="js">JetStream context.</param>

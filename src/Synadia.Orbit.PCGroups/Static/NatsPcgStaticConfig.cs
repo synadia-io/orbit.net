@@ -23,6 +23,13 @@ public sealed record NatsPcgStaticConfig
     public string? Filter { get; init; }
 
     /// <summary>
+    /// Gets the optional list of subject filters for the consumer group.
+    /// When set, takes precedence over <see cref="Filter"/>.
+    /// </summary>
+    [JsonPropertyName("filters")]
+    public string[]? Filters { get; init; }
+
+    /// <summary>
     /// Gets the optional list of allowed member names.
     /// </summary>
     [JsonPropertyName("members")]
@@ -47,4 +54,23 @@ public sealed record NatsPcgStaticConfig
     /// <returns>True if the member is in the membership.</returns>
     public bool IsInMembership(string name)
         => NatsPcgPartitionDistributor.IsInMembership(Members, MemberMappings, name);
+
+    /// <summary>
+    /// Gets the effective filters, preferring <see cref="Filters"/> over <see cref="Filter"/>.
+    /// </summary>
+    /// <returns>The effective filters array, or null if no filters are configured.</returns>
+    public string[]? GetEffectiveFilters()
+    {
+        if (Filters != null && Filters.Length > 0)
+        {
+            return Filters;
+        }
+
+        if (!string.IsNullOrEmpty(Filter))
+        {
+            return new[] { Filter! };
+        }
+
+        return null;
+    }
 }

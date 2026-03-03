@@ -68,6 +68,56 @@ public static class NatsPcgElasticExtensions
     }
 
     /// <summary>
+    /// Creates an elastic consumer group with multiple subject filters.
+    /// </summary>
+    /// <param name="js">JetStream context.</param>
+    /// <param name="streamName">Name of the source stream.</param>
+    /// <param name="consumerGroupName">Name of the consumer group.</param>
+    /// <param name="maxNumMembers">Maximum number of members (also the number of partitions).</param>
+    /// <param name="filters">Subject filters for the consumer group.</param>
+    /// <param name="partitioningWildcards">Wildcard positions for partitioning (1-indexed). Use <c>[-1]</c> to partition by the entire subject.</param>
+    /// <param name="maxBufferedMessages">Optional maximum number of buffered messages.</param>
+    /// <param name="maxBufferedBytes">Optional maximum bytes of buffered messages.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The created configuration.</returns>
+    public static async Task<NatsPcgElasticConfig> CreatePcgElasticAsync(
+        this INatsJSContext js,
+        string streamName,
+        string consumerGroupName,
+        uint maxNumMembers,
+        string[] filters,
+        int[] partitioningWildcards,
+        long? maxBufferedMessages = null,
+        long? maxBufferedBytes = null,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateMultiFilterConfig(maxNumMembers, filters, partitioningWildcards);
+
+        var config = new NatsPcgElasticConfig
+        {
+            MaxMembers = maxNumMembers,
+            Filter = filters[0],
+            Filters = filters,
+            PartitioningWildcards = partitioningWildcards,
+            MaxBufferedMsgs = maxBufferedMessages,
+            MaxBufferedBytes = maxBufferedBytes,
+        };
+
+        // Create the work-queue stream that sources from the original stream
+        await CreateWorkQueueStreamAsync(js, streamName, consumerGroupName, config, cancellationToken).ConfigureAwait(false);
+
+        // Store config in KV
+        var kv = js.Connection.CreateKeyValueStoreContext();
+        var store = await GetOrCreateKvStoreAsync(kv, cancellationToken).ConfigureAwait(false);
+
+        string key = GetKvKey(streamName, consumerGroupName);
+
+        ulong revision = await store.CreateAsync(key, config, serializer: NatsPcgJsonSerializer<NatsPcgElasticConfig>.Default, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        return config with { Revision = revision };
+    }
+
+    /// <summary>
     /// Gets the configuration for an elastic consumer group.
     /// </summary>
     /// <param name="js">JetStream context.</param>
@@ -502,6 +552,18 @@ public static class NatsPcgElasticExtensions
         NatsPcgMemberMappingValidator.ValidateFilterAndWildcards(filter, partitioningWildcards);
     }
 
+    // ReSharper disable ParameterOnlyUsedForPreconditionCheck.Local
+    private static void ValidateMultiFilterConfig(uint maxNumMembers, string[] filters, int[] partitioningWildcards)
+    {
+        // ReSharper restore ParameterOnlyUsedForPreconditionCheck.Local
+        if (maxNumMembers == 0)
+        {
+            throw new NatsPcgConfigurationException("maxNumMembers must be greater than 0");
+        }
+
+        NatsPcgMemberMappingValidator.ValidateFiltersAndWildcards(filters, partitioningWildcards);
+    }
+
     private static async Task CreateWorkQueueStreamAsync(
         INatsJSContext js,
         string streamName,
@@ -511,37 +573,21 @@ public static class NatsPcgElasticExtensions
     {
         string workQueueStreamName = GetWorkQueueStreamName(streamName, consumerGroupName);
 
-        // Build subject transform: add partition prefix based on wildcards
-        // Transform syntax: {{Partition(numPartitions, wildcardIndexes...)}}
-        // Replace * wildcards with {{wildcard(N)}} in the filter
-        string wildcardStr = string.Join(",", config.PartitioningWildcards);
-        var filterTokens = config.Filter.Split('.');
-        int wildcardIndex = 1;
-        for (int i = 0; i < filterTokens.Length; i++)
-        {
-            if (filterTokens[i] == "*")
-            {
-                filterTokens[i] = $"{{{{wildcard({wildcardIndex})}}}}";
-                wildcardIndex++;
-            }
-        }
+        var effectiveFilters = config.GetEffectiveFilters();
+        bool isFullSubject = NatsPcgMemberMappingValidator.IsPartitionByFullSubject(config.PartitioningWildcards);
 
-        string destFromFilter = string.Join(".", filterTokens);
-        string subjectTransform = $"{{{{Partition({config.MaxMembers},{wildcardStr})}}}}.{destFromFilter}";
+        var subjectTransforms = new List<SubjectTransform>();
+        foreach (var filter in effectiveFilters)
+        {
+            subjectTransforms.Add(BuildSubjectTransform(filter, config.MaxMembers, config.PartitioningWildcards, isFullSubject));
+        }
 
         var sources = new List<StreamSource>
         {
             new()
             {
                 Name = streamName,
-                SubjectTransforms = new List<SubjectTransform>
-                {
-                    new()
-                    {
-                        Src = config.Filter,
-                        Dest = subjectTransform,
-                    },
-                },
+                SubjectTransforms = subjectTransforms,
             },
         };
 
@@ -563,6 +609,44 @@ public static class NatsPcgElasticExtensions
         }
 
         await js.CreateStreamAsync(streamConfig, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static SubjectTransform BuildSubjectTransform(string filter, uint maxMembers, int[] partitioningWildcards, bool isFullSubject)
+    {
+        // Build subject transform: add partition prefix based on wildcards
+        // Replace * wildcards with {{wildcard(N)}} in the filter
+        var filterTokens = filter.Split('.');
+        int wildcardIndex = 1;
+        for (int i = 0; i < filterTokens.Length; i++)
+        {
+            if (filterTokens[i] == "*")
+            {
+                filterTokens[i] = $"{{{{wildcard({wildcardIndex})}}}}";
+                wildcardIndex++;
+            }
+        }
+
+        string destFromFilter = string.Join(".", filterTokens);
+
+        string partitionFunction;
+        if (isFullSubject)
+        {
+            // {{Partition(N)}} without wildcard positions hashes the entire subject
+            partitionFunction = $"{{{{Partition({maxMembers})}}}}";
+        }
+        else
+        {
+            string wildcardStr = string.Join(",", partitioningWildcards);
+            partitionFunction = $"{{{{Partition({maxMembers},{wildcardStr})}}}}";
+        }
+
+        string subjectTransform = $"{partitionFunction}.{destFromFilter}";
+
+        return new SubjectTransform
+        {
+            Src = filter,
+            Dest = subjectTransform,
+        };
     }
 
     private static async Task<string[]> UpdateMembersAsync(

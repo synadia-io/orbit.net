@@ -24,9 +24,17 @@ public sealed record NatsPcgElasticConfig
 
     /// <summary>
     /// Gets the wildcard positions used for partitioning (1-indexed).
+    /// Use <c>[-1]</c> to partition by the entire subject string.
     /// </summary>
     [JsonPropertyName("partitioning_wildcards")]
     public required int[] PartitioningWildcards { get; init; }
+
+    /// <summary>
+    /// Gets the optional list of subject filters for the consumer group.
+    /// When set, takes precedence over <see cref="Filter"/>.
+    /// </summary>
+    [JsonPropertyName("filters")]
+    public string[]? Filters { get; init; }
 
     /// <summary>
     /// Gets the optional maximum number of buffered messages.
@@ -65,4 +73,18 @@ public sealed record NatsPcgElasticConfig
     /// <returns>True if the member is in the membership.</returns>
     public bool IsInMembership(string name)
         => NatsPcgPartitionDistributor.IsInMembership(Members, MemberMappings, name);
+
+    /// <summary>
+    /// Gets the effective filters, preferring <see cref="Filters"/> over <see cref="Filter"/>.
+    /// </summary>
+    /// <returns>The effective filters array.</returns>
+    public string[] GetEffectiveFilters()
+    {
+        if (Filters != null && Filters.Length > 0)
+        {
+            return Filters;
+        }
+
+        return new[] { Filter };
+    }
 }

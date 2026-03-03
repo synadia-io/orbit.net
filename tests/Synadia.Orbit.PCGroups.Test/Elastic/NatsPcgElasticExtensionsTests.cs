@@ -543,4 +543,209 @@ public class NatsPcgElasticExtensionsTests
             await js.DeleteStreamAsync(streamName);
         }
     }
+
+    [Fact]
+    public async Task CreatePcgElastic_MultipleFilters_Success()
+    {
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
+        var js = nats.CreateJetStreamContext();
+
+        var streamName = $"test-stream-{Guid.NewGuid():N}";
+
+        await js.CreateStreamAsync(new StreamConfig
+        {
+            Name = streamName,
+            Subjects = ["orders.*", "refunds.*"],
+        });
+
+        try
+        {
+            var groupName = $"test-group-{Guid.NewGuid():N}";
+
+            var config = await js.CreatePcgElasticAsync(
+                streamName,
+                groupName,
+                maxNumMembers: 3,
+                filters: ["orders.*", "refunds.*"],
+                partitioningWildcards: [1]);
+
+            Assert.Equal(3u, config.MaxMembers);
+            Assert.Equal("orders.*", config.Filter);
+            Assert.Equal(new[] { "orders.*", "refunds.*" }, config.Filters);
+            Assert.Equal(new[] { 1 }, config.PartitioningWildcards);
+
+            // Verify config round-trip
+            var retrieved = await js.GetPcgElasticConfigAsync(streamName, groupName);
+            Assert.Equal(new[] { "orders.*", "refunds.*" }, retrieved.Filters);
+
+            // Verify GetEffectiveFilters prefers Filters over Filter
+            var effective = retrieved.GetEffectiveFilters();
+            Assert.Equal(new[] { "orders.*", "refunds.*" }, effective);
+
+            await js.DeletePcgElasticAsync(streamName, groupName);
+        }
+        finally
+        {
+            await js.DeleteStreamAsync(streamName);
+        }
+    }
+
+    [Fact]
+    public async Task ConsumeElastic_MultipleFilters_ReceivesFromAllFilters()
+    {
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
+        var js = nats.CreateJetStreamContext();
+
+        var streamName = $"test-stream-{Guid.NewGuid():N}";
+
+        await js.CreateStreamAsync(new StreamConfig
+        {
+            Name = streamName,
+            Subjects = ["orders.*", "refunds.*"],
+        });
+
+        try
+        {
+            var groupName = $"test-group-{Guid.NewGuid():N}";
+
+            await js.CreatePcgElasticAsync(
+                streamName,
+                groupName,
+                maxNumMembers: 3,
+                filters: ["orders.*", "refunds.*"],
+                partitioningWildcards: [1]);
+
+            // Add a member
+            await js.AddPcgElasticMembersAsync(streamName, groupName, ["worker"]);
+
+            // Publish messages to both subject patterns
+            await js.PublishAsync("orders.item1", "order1");
+            await js.PublishAsync("refunds.item2", "refund1");
+            await js.PublishAsync("orders.item3", "order2");
+            await js.PublishAsync("refunds.item4", "refund2");
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var receivedSubjects = new List<string>();
+
+            await foreach (var msg in js.ConsumePcgElasticAsync<string>(streamName, groupName, "worker", cancellationToken: cts.Token))
+            {
+                receivedSubjects.Add(msg.Subject);
+                await msg.AckAsync(cancellationToken: cts.Token).ConfigureAwait(false);
+                if (receivedSubjects.Count >= 4)
+                {
+                    break;
+                }
+            }
+
+            Assert.Equal(4, receivedSubjects.Count);
+            Assert.Contains(receivedSubjects, s => s.StartsWith("orders."));
+            Assert.Contains(receivedSubjects, s => s.StartsWith("refunds."));
+
+            await js.DeletePcgElasticAsync(streamName, groupName, cancellationToken: cts.Token);
+        }
+        finally
+        {
+            await js.DeleteStreamAsync(streamName);
+        }
+    }
+
+    [Fact]
+    public async Task CreatePcgElastic_SentinelMinusOne_Success()
+    {
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
+        var js = nats.CreateJetStreamContext();
+
+        var streamName = $"test-stream-{Guid.NewGuid():N}";
+
+        await js.CreateStreamAsync(new StreamConfig
+        {
+            Name = streamName,
+            Subjects = ["events.*"],
+        });
+
+        try
+        {
+            var groupName = $"test-group-{Guid.NewGuid():N}";
+
+            var config = await js.CreatePcgElasticAsync(
+                streamName,
+                groupName,
+                maxNumMembers: 3,
+                filter: "events.*",
+                partitioningWildcards: [-1]);
+
+            Assert.Equal(3u, config.MaxMembers);
+            Assert.Equal("events.*", config.Filter);
+            Assert.Equal(new[] { -1 }, config.PartitioningWildcards);
+
+            // Verify config round-trip
+            var retrieved = await js.GetPcgElasticConfigAsync(streamName, groupName);
+            Assert.Equal(new[] { -1 }, retrieved.PartitioningWildcards);
+
+            await js.DeletePcgElasticAsync(streamName, groupName);
+        }
+        finally
+        {
+            await js.DeleteStreamAsync(streamName);
+        }
+    }
+
+    [Fact]
+    public async Task ConsumeElastic_SentinelMinusOne_ReceivesAllMessages()
+    {
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
+        var js = nats.CreateJetStreamContext();
+
+        var streamName = $"test-stream-{Guid.NewGuid():N}";
+
+        await js.CreateStreamAsync(new StreamConfig
+        {
+            Name = streamName,
+            Subjects = ["events.*"],
+        });
+
+        try
+        {
+            var groupName = $"test-group-{Guid.NewGuid():N}";
+
+            await js.CreatePcgElasticAsync(
+                streamName,
+                groupName,
+                maxNumMembers: 3,
+                filter: "events.*",
+                partitioningWildcards: [-1]);
+
+            // Single member gets all partitions
+            await js.AddPcgElasticMembersAsync(streamName, groupName, ["worker"]);
+
+            // Publish messages
+            await js.PublishAsync("events.key1", "payload1");
+            await js.PublishAsync("events.key2", "payload2");
+            await js.PublishAsync("events.key3", "payload3");
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var receivedSubjects = new List<string>();
+
+            await foreach (var msg in js.ConsumePcgElasticAsync<string>(streamName, groupName, "worker", cancellationToken: cts.Token))
+            {
+                receivedSubjects.Add(msg.Subject);
+                await msg.AckAsync();
+                if (receivedSubjects.Count >= 3)
+                {
+                    break;
+                }
+            }
+
+            Assert.Equal(3, receivedSubjects.Count);
+            Assert.Contains("events.key1", receivedSubjects);
+            Assert.Contains("events.key2", receivedSubjects);
+            Assert.Contains("events.key3", receivedSubjects);
+
+            await js.DeletePcgElasticAsync(streamName, groupName);
+        }
+        finally
+        {
+            await js.DeleteStreamAsync(streamName);
+        }
+    }
 }
