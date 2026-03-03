@@ -630,7 +630,7 @@ public class NatsPcgElasticExtensionsTests
             await foreach (var msg in js.ConsumePcgElasticAsync<string>(streamName, groupName, "worker", cancellationToken: cts.Token))
             {
                 receivedSubjects.Add(msg.Subject);
-                await msg.AckAsync(cancellationToken: cts.Token).ConfigureAwait(false);
+                await msg.AckAsync(cancellationToken: cts.Token);
                 if (receivedSubjects.Count >= 4)
                 {
                     break;
@@ -740,6 +740,160 @@ public class NatsPcgElasticExtensionsTests
             Assert.Contains("events.key1", receivedSubjects);
             Assert.Contains("events.key2", receivedSubjects);
             Assert.Contains("events.key3", receivedSubjects);
+
+            await js.DeletePcgElasticAsync(streamName, groupName);
+        }
+        finally
+        {
+            await js.DeleteStreamAsync(streamName);
+        }
+    }
+
+    [Fact]
+    public async Task ConsumeElastic_SentinelMinusOne_PartitionsAcrossMembers()
+    {
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
+        var js = nats.CreateJetStreamContext();
+
+        var streamName = $"test-stream-{Guid.NewGuid():N}";
+
+        await js.CreateStreamAsync(new StreamConfig
+        {
+            Name = streamName,
+            Subjects = ["events.*"],
+        });
+
+        try
+        {
+            var groupName = $"test-group-{Guid.NewGuid():N}";
+
+            // 4 partitions, [-1] means partition by full subject hash
+            await js.CreatePcgElasticAsync(
+                streamName,
+                groupName,
+                maxNumMembers: 4,
+                filter: "events.*",
+                partitioningWildcards: [-1]);
+
+            await js.AddPcgElasticMembersAsync(streamName, groupName, ["memberA", "memberB"]);
+
+            // Publish enough messages to different subjects so partitions get spread
+            for (int i = 0; i < 20; i++)
+            {
+                await js.PublishAsync($"events.item{i}", $"payload{i}");
+            }
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            var memberAMessages = new List<string>();
+            var memberBMessages = new List<string>();
+
+            var taskA = Task.Run(async () =>
+            {
+                try
+                {
+                    await foreach (var msg in js.ConsumePcgElasticAsync<string>(streamName, groupName, "memberA", cancellationToken: cts.Token))
+                    {
+                        memberAMessages.Add(msg.Subject);
+                        await msg.AckAsync();
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            });
+
+            var taskB = Task.Run(async () =>
+            {
+                try
+                {
+                    await foreach (var msg in js.ConsumePcgElasticAsync<string>(streamName, groupName, "memberB", cancellationToken: cts.Token))
+                    {
+                        memberBMessages.Add(msg.Subject);
+                        await msg.AckAsync();
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            });
+
+            // Wait for all 20 messages
+            while (memberAMessages.Count + memberBMessages.Count < 20 && !cts.Token.IsCancellationRequested)
+            {
+                await Task.Delay(100, cts.Token);
+            }
+
+            cts.Cancel();
+            await Task.WhenAll(taskA, taskB);
+
+            // Both members should have received messages (full-subject hash distributes across partitions)
+            Assert.True(memberAMessages.Count > 0, "memberA should receive messages");
+            Assert.True(memberBMessages.Count > 0, "memberB should receive messages");
+            Assert.Equal(20, memberAMessages.Count + memberBMessages.Count);
+
+            // No overlap - each message goes to exactly one member
+            var allMessages = memberAMessages.Concat(memberBMessages).ToList();
+            Assert.Equal(allMessages.Count, allMessages.Distinct().Count());
+
+            // Verify determinism: publish the same subjects again and check same member gets them
+            // (This proves server is hashing the full subject, not round-robining)
+            for (int i = 0; i < 20; i++)
+            {
+                await js.PublishAsync($"events.item{i}", $"payload{i}-round2");
+            }
+
+            var memberARound2 = new List<string>();
+            var memberBRound2 = new List<string>();
+
+            using var cts2 = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+            var taskA2 = Task.Run(async () =>
+            {
+                try
+                {
+                    await foreach (var msg in js.ConsumePcgElasticAsync<string>(streamName, groupName, "memberA", cancellationToken: cts2.Token))
+                    {
+                        memberARound2.Add(msg.Subject);
+                        await msg.AckAsync();
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            });
+
+            var taskB2 = Task.Run(async () =>
+            {
+                try
+                {
+                    await foreach (var msg in js.ConsumePcgElasticAsync<string>(streamName, groupName, "memberB", cancellationToken: cts2.Token))
+                    {
+                        memberBRound2.Add(msg.Subject);
+                        await msg.AckAsync();
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            });
+
+            while (memberARound2.Count + memberBRound2.Count < 20 && !cts2.Token.IsCancellationRequested)
+            {
+                await Task.Delay(100, cts2.Token);
+            }
+
+            cts2.Cancel();
+            await Task.WhenAll(taskA2, taskB2);
+
+            Assert.Equal(20, memberARound2.Count + memberBRound2.Count);
+
+            // Same subjects should land on the same member both rounds
+            memberAMessages.Sort(StringComparer.Ordinal);
+            memberARound2.Sort(StringComparer.Ordinal);
+            memberBMessages.Sort(StringComparer.Ordinal);
+            memberBRound2.Sort(StringComparer.Ordinal);
+            Assert.Equal(memberAMessages, memberARound2);
+            Assert.Equal(memberBMessages, memberBRound2);
 
             await js.DeletePcgElasticAsync(streamName, groupName);
         }
