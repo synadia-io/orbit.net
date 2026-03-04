@@ -61,9 +61,8 @@ public static class NatsPcgStaticExtensions
     /// <summary>
     /// Creates a static consumer group with multiple subject filters.
     /// <para>
-    /// <b>Compatibility note:</b> Multi-filter support is a .NET-only extension not yet supported by
-    /// other Orbit implementations. Configs created with multiple filters may not be correctly
-    /// interpreted by clients using other implementations.
+    /// <b>Compatibility note:</b> Multi-filter is a .NET-only extension not recognized by
+    /// other Orbit implementations.
     /// </para>
     /// </summary>
     /// <param name="js">JetStream context.</param>
