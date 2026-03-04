@@ -653,6 +653,7 @@ public class NatsPcgElasticExtensionsTests
     public async Task CreatePcgElastic_SentinelMinusOne_Success()
     {
         await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await SkipBelow212Async(nats);
         var js = nats.CreateJetStreamContext();
 
         var streamName = $"test-stream-{Guid.NewGuid():N}";
@@ -694,6 +695,7 @@ public class NatsPcgElasticExtensionsTests
     public async Task ConsumeElastic_SentinelMinusOne_ReceivesAllMessages()
     {
         await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await SkipBelow212Async(nats);
         var js = nats.CreateJetStreamContext();
 
         var streamName = $"test-stream-{Guid.NewGuid():N}";
@@ -753,6 +755,7 @@ public class NatsPcgElasticExtensionsTests
     public async Task ConsumeElastic_SentinelMinusOne_PartitionsAcrossMembers()
     {
         await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await SkipBelow212Async(nats);
         var js = nats.CreateJetStreamContext();
 
         var streamName = $"test-stream-{Guid.NewGuid():N}";
@@ -901,5 +904,11 @@ public class NatsPcgElasticExtensionsTests
         {
             await js.DeleteStreamAsync(streamName);
         }
+    }
+
+    private static async Task SkipBelow212Async(NatsConnection nats)
+    {
+        await nats.ConnectRetryAsync();
+        Assert.SkipUnless(nats.HasMinServerVersion(2, 12), $"Server version {nats.ServerInfo?.Version} does not support [-1] sentinel partitioning (requires 2.12+)");
     }
 }
