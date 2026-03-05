@@ -77,10 +77,10 @@ public static class NatsPcgMemberMappingValidator
     }
 
     /// <summary>
-    /// Validates filter and partitioning wildcards for elastic consumer groups.
+    /// Validates a partitioning filter for elastic consumer groups.
     /// </summary>
     /// <param name="filter">The subject filter.</param>
-    /// <param name="partitioningWildcards">The partitioning wildcard positions (1-indexed).</param>
+    /// <param name="partitioningWildcards">The partitioning wildcard positions (1-indexed). Empty array means partition by full subject.</param>
     /// <exception cref="NatsPcgConfigurationException">Thrown when validation fails.</exception>
     public static void ValidateFilterAndWildcards(string filter, int[] partitioningWildcards)
     {
@@ -90,24 +90,22 @@ public static class NatsPcgMemberMappingValidator
         }
 
         // Count wildcards in filter
-        var filterTokens = filter.Split('.');
-        int numWildcards = 0;
-        foreach (var token in filterTokens)
-        {
-            if (token == "*")
-            {
-                numWildcards++;
-            }
-        }
+        int numWildcards = CountWildcards(filter);
 
         if (numWildcards < 1)
         {
             throw new NatsPcgConfigurationException("Filter must contain at least one '*' wildcard");
         }
 
-        if (partitioningWildcards == null || partitioningWildcards.Length == 0)
+        if (partitioningWildcards == null)
         {
-            throw new NatsPcgConfigurationException("PartitioningWildcards must contain at least one element");
+            throw new NatsPcgConfigurationException("PartitioningWildcards must not be null");
+        }
+
+        // Empty array means partition by full subject
+        if (IsPartitionByFullSubject(partitioningWildcards))
+        {
+            return;
         }
 
         if (partitioningWildcards.Length > numWildcards)
@@ -132,5 +130,58 @@ public static class NatsPcgMemberMappingValidator
                     $"Duplicate partitioning wildcard position {pos}");
             }
         }
+    }
+
+    /// <summary>
+    /// Validates a partitioning filter record for elastic consumer groups.
+    /// </summary>
+    /// <param name="partitioningFilter">The partitioning filter to validate.</param>
+    /// <exception cref="NatsPcgConfigurationException">Thrown when validation fails.</exception>
+    public static void ValidatePartitioningFilter(NatsPcgPartitioningFilter partitioningFilter)
+    {
+        ValidateFilterAndWildcards(partitioningFilter.Filter, partitioningFilter.PartitioningWildcards);
+    }
+
+    /// <summary>
+    /// Validates multiple partitioning filters for elastic consumer groups.
+    /// </summary>
+    /// <param name="partitioningFilters">The partitioning filters to validate.</param>
+    /// <exception cref="NatsPcgConfigurationException">Thrown when validation fails.</exception>
+    public static void ValidatePartitioningFilters(NatsPcgPartitioningFilter[] partitioningFilters)
+    {
+        if (partitioningFilters == null || partitioningFilters.Length == 0)
+        {
+            throw new NatsPcgConfigurationException("At least one partitioning filter must be specified");
+        }
+
+        foreach (var pf in partitioningFilters)
+        {
+            ValidatePartitioningFilter(pf);
+        }
+    }
+
+    /// <summary>
+    /// Determines if the partitioning wildcards represent partition-by-full-subject mode.
+    /// </summary>
+    /// <param name="partitioningWildcards">The partitioning wildcard positions.</param>
+    /// <returns>True if the array is empty (partition by full subject).</returns>
+    public static bool IsPartitionByFullSubject(int[] partitioningWildcards)
+    {
+        return partitioningWildcards != null && partitioningWildcards.Length == 0;
+    }
+
+    private static int CountWildcards(string filter)
+    {
+        var filterTokens = filter.Split('.');
+        int numWildcards = 0;
+        foreach (var token in filterTokens)
+        {
+            if (token == "*")
+            {
+                numWildcards++;
+            }
+        }
+
+        return numWildcards;
     }
 }

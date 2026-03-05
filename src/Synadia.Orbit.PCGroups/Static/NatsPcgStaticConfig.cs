@@ -17,10 +17,10 @@ public sealed record NatsPcgStaticConfig
     public required uint MaxMembers { get; init; }
 
     /// <summary>
-    /// Gets the optional filter for the consumer group.
+    /// Gets the optional list of subject filters for the consumer group.
     /// </summary>
-    [JsonPropertyName("filter")]
-    public string? Filter { get; init; }
+    [JsonPropertyName("filters")]
+    public string[]? Filters { get; init; }
 
     /// <summary>
     /// Gets the optional list of allowed member names.
