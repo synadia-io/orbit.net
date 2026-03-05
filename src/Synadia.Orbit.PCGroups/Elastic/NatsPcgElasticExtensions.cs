@@ -308,6 +308,44 @@ public static class NatsPcgElasticExtensions
     }
 
     /// <summary>
+    /// Adds partitioning filters to an elastic consumer group.
+    /// </summary>
+    /// <param name="js">JetStream context.</param>
+    /// <param name="streamName">Name of the source stream.</param>
+    /// <param name="consumerGroupName">Name of the consumer group.</param>
+    /// <param name="partitioningFiltersToAdd">Partitioning filters to add.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Updated partitioning filters.</returns>
+    public static async Task<NatsPcgPartitioningFilter[]> AddPcgElasticFiltersAsync(
+        this INatsJSContext js,
+        string streamName,
+        string consumerGroupName,
+        NatsPcgPartitioningFilter[] partitioningFiltersToAdd,
+        CancellationToken cancellationToken = default)
+    {
+        return await UpdateFiltersAsync(js, streamName, consumerGroupName, partitioningFiltersToAdd, add: true, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Removes partitioning filters from an elastic consumer group.
+    /// </summary>
+    /// <param name="js">JetStream context.</param>
+    /// <param name="streamName">Name of the source stream.</param>
+    /// <param name="consumerGroupName">Name of the consumer group.</param>
+    /// <param name="partitioningFiltersToDrop">Partitioning filters to remove.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Updated partitioning filters.</returns>
+    public static async Task<NatsPcgPartitioningFilter[]> DeletePcgElasticFiltersAsync(
+        this INatsJSContext js,
+        string streamName,
+        string consumerGroupName,
+        NatsPcgPartitioningFilter[] partitioningFiltersToDrop,
+        CancellationToken cancellationToken = default)
+    {
+        return await UpdateFiltersAsync(js, streamName, consumerGroupName, partitioningFiltersToDrop, add: false, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Sets custom member-to-partition mappings.
     /// </summary>
     /// <param name="js">JetStream context.</param>
@@ -525,6 +563,23 @@ public static class NatsPcgElasticExtensions
         NatsPcgElasticConfig config,
         CancellationToken cancellationToken)
     {
+        var streamConfig = BuildWorkQueueStreamConfig(streamName, consumerGroupName, config);
+        await js.CreateStreamAsync(streamConfig, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task UpdateWorkQueueStreamAsync(
+        INatsJSContext js,
+        string streamName,
+        string consumerGroupName,
+        NatsPcgElasticConfig config,
+        CancellationToken cancellationToken)
+    {
+        var streamConfig = BuildWorkQueueStreamConfig(streamName, consumerGroupName, config);
+        await js.CreateOrUpdateStreamAsync(streamConfig, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static StreamConfig BuildWorkQueueStreamConfig(string streamName, string consumerGroupName, NatsPcgElasticConfig config)
+    {
         string workQueueStreamName = GetWorkQueueStreamName(streamName, consumerGroupName);
 
         var subjectTransforms = new List<SubjectTransform>();
@@ -567,7 +622,7 @@ public static class NatsPcgElasticExtensions
             streamConfig.MaxBytes = config.MaxBufferedBytes.Value;
         }
 
-        await js.CreateStreamAsync(streamConfig, cancellationToken).ConfigureAwait(false);
+        return streamConfig;
     }
 
     private static SubjectTransform BuildSubjectTransform(NatsPcgPartitioningFilter pf, uint maxMembers)
@@ -665,6 +720,91 @@ public static class NatsPcgElasticExtensions
             {
                 await store.UpdateAsync(key, updatedConfig, entry.Revision, serializer: NatsPcgJsonSerializer<NatsPcgElasticConfig>.Default, cancellationToken: cancellationToken).ConfigureAwait(false);
                 return updatedMembers ?? Array.Empty<string>();
+            }
+            catch (NatsKVWrongLastRevisionException)
+            {
+                // Config changed - retry
+                if (retry < maxRetries - 1)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(50 * (retry + 1)), cancellationToken).ConfigureAwait(false);
+                }
+            }
+        }
+
+        throw new NatsPcgException("Failed to update config after maximum retries");
+    }
+
+    private static async Task<NatsPcgPartitioningFilter[]> UpdateFiltersAsync(
+        INatsJSContext js,
+        string streamName,
+        string consumerGroupName,
+        NatsPcgPartitioningFilter[] partitioningFilters,
+        bool add,
+        CancellationToken cancellationToken)
+    {
+        if (partitioningFilters == null)
+        {
+            throw new ArgumentNullException(nameof(partitioningFilters));
+        }
+
+        var kv = js.Connection.CreateKeyValueStoreContext();
+        var store = await kv.GetStoreAsync(NatsPcgConstants.ElasticKvBucket, cancellationToken).ConfigureAwait(false);
+        string key = GetKvKey(streamName, consumerGroupName);
+
+        // Retry loop for optimistic concurrency
+        const int maxRetries = 5;
+        for (int retry = 0; retry < maxRetries; retry++)
+        {
+            var entry = await store.GetEntryAsync(key, serializer: NatsPcgJsonSerializer<NatsPcgElasticConfig>.Default, cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (entry.Value == null)
+            {
+                throw new NatsPcgException($"Consumer group '{consumerGroupName}' not found");
+            }
+
+            var config = entry.Value;
+            var updatedFilters = new SortedSet<NatsPcgPartitioningFilter>(config.PartitioningFilters, PartitioningFilterComparer.Instance);
+            var originalCount = updatedFilters.Count;
+
+            if (add)
+            {
+                foreach (var filter in partitioningFilters)
+                {
+                    updatedFilters.Add(filter);
+                }
+            }
+            else
+            {
+                foreach (var filter in partitioningFilters)
+                {
+                    updatedFilters.Remove(filter);
+                }
+            }
+
+            if (updatedFilters.Count == originalCount)
+            {
+                return config.PartitioningFilters;
+            }
+
+            if (updatedFilters.Count == 0)
+            {
+                throw new NatsPcgConfigurationException("At least one partitioning filter must be specified");
+            }
+
+            var filtersArray = updatedFilters.ToArray();
+            NatsPcgMemberMappingValidator.ValidatePartitioningFilters(filtersArray);
+
+            var updatedConfig = config with
+            {
+                PartitioningFilters = filtersArray,
+            };
+
+            // Keep work-queue stream source transforms in sync with config partitioning filters.
+            await UpdateWorkQueueStreamAsync(js, streamName, consumerGroupName, updatedConfig, cancellationToken).ConfigureAwait(false);
+
+            try
+            {
+                await store.UpdateAsync(key, updatedConfig, entry.Revision, serializer: NatsPcgJsonSerializer<NatsPcgElasticConfig>.Default, cancellationToken: cancellationToken).ConfigureAwait(false);
+                return filtersArray;
             }
             catch (NatsKVWrongLastRevisionException)
             {
