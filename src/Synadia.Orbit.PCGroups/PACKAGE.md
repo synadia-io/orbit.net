@@ -49,7 +49,7 @@ await js.CreatePcgStaticAsync(
     streamName: "orders",
     consumerGroupName: "order-processors",
     maxNumMembers: 3,
-    filter: "orders.*");
+    filters: ["orders.*"]);
 
 // Publish messages - they get transformed to {partition}.orders.{id}
 await js.PublishAsync("orders.123", new Order("ORD-123", "CUST-1", 99.99m));
@@ -90,8 +90,7 @@ await js.CreatePcgElasticAsync(
     streamName: "events",
     consumerGroupName: "event-processors",
     maxNumMembers: 10,
-    filter: "events.*",           // e.g., events.user123, events.user456
-    partitioningWildcards: [1]);  // Partition by the first wildcard (user ID)
+    partitioningFilters: [new NatsPcgPartitioningFilter("events.*", [1])]);
 
 // Add members dynamically - partitions will be distributed across them
 string[] members = ["worker-1", "worker-2", "worker-3"];
@@ -175,13 +174,13 @@ await js.CreateStreamAsync(new StreamConfig("orders", ["orders.*"])
 });
 
 await js.CreatePcgStaticAsync("orders", "processors", maxNumMembers: 6,
-    filter: "orders.*", memberMappings: mappings);
+    filters: ["orders.*"], memberMappings: mappings);
 
 // For elastic groups - no transform needed on source stream
 await js.CreateStreamAsync(new StreamConfig("events", ["events.*"]));
 
 await js.CreatePcgElasticAsync("events", "processors", maxNumMembers: 6,
-    filter: "events.*", partitioningWildcards: [1]);
+    partitioningFilters: [new NatsPcgPartitioningFilter("events.*", [1])]);
 await js.SetPcgElasticMemberMappingsAsync("events", "processors", mappings);
 ```
 

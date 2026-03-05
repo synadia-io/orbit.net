@@ -17,32 +17,10 @@ public sealed record NatsPcgElasticConfig
     public required uint MaxMembers { get; init; }
 
     /// <summary>
-    /// Gets the subject filter for the consumer group.
+    /// Gets the partitioning filters, each pairing a subject filter with its wildcard positions for partitioning.
     /// </summary>
-    [JsonPropertyName("filter")]
-    public required string Filter { get; init; }
-
-    /// <summary>
-    /// Gets the wildcard positions used for partitioning (1-indexed).
-    /// Use <c>[-1]</c> to partition by the entire subject string (server hashes the full subject via FNV-32a).
-    /// <para>
-    /// <b>Compatibility note:</b> The <c>[-1]</c> sentinel is a .NET-only extension (requires NATS server 2.12+)
-    /// not recognized by other Orbit implementations.
-    /// </para>
-    /// </summary>
-    [JsonPropertyName("partitioning_wildcards")]
-    public required int[] PartitioningWildcards { get; init; }
-
-    /// <summary>
-    /// Gets the optional list of subject filters for the consumer group.
-    /// When set, takes precedence over <see cref="Filter"/>.
-    /// <para>
-    /// <b>Compatibility note:</b> Multi-filter is a .NET-only extension. Other Orbit implementations
-    /// will only see the single <see cref="Filter"/> field.
-    /// </para>
-    /// </summary>
-    [JsonPropertyName("filters")]
-    public string[]? Filters { get; init; }
+    [JsonPropertyName("partitioning_filters")]
+    public required NatsPcgPartitioningFilter[] PartitioningFilters { get; init; }
 
     /// <summary>
     /// Gets the optional maximum number of buffered messages.
@@ -81,18 +59,4 @@ public sealed record NatsPcgElasticConfig
     /// <returns>True if the member is in the membership.</returns>
     public bool IsInMembership(string name)
         => NatsPcgPartitionDistributor.IsInMembership(Members, MemberMappings, name);
-
-    /// <summary>
-    /// Gets the effective filters, preferring <see cref="Filters"/> over <see cref="Filter"/>.
-    /// </summary>
-    /// <returns>The effective filters array.</returns>
-    public string[] GetEffectiveFilters()
-    {
-        if (Filters != null && Filters.Length > 0)
-        {
-            return Filters;
-        }
-
-        return new[] { Filter };
-    }
 }

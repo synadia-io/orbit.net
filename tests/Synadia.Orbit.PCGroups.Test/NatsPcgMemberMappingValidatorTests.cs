@@ -234,16 +234,14 @@ public class NatsPcgMemberMappingValidatorTests
         var ex = Assert.Throws<NatsPcgConfigurationException>(() =>
             NatsPcgMemberMappingValidator.ValidateFilterAndWildcards("foo.*", null!));
 
-        Assert.Contains("at least one element", ex.Message);
+        Assert.Contains("must not be null", ex.Message);
     }
 
     [Fact]
-    public void ValidateFilterAndWildcards_EmptyPartitioningWildcards_ThrowsException()
+    public void ValidateFilterAndWildcards_EmptyPartitioningWildcards_FullSubject_NoException()
     {
-        var ex = Assert.Throws<NatsPcgConfigurationException>(() =>
-            NatsPcgMemberMappingValidator.ValidateFilterAndWildcards("foo.*", Array.Empty<int>()));
-
-        Assert.Contains("at least one element", ex.Message);
+        // Empty array means partition by full subject
+        NatsPcgMemberMappingValidator.ValidateFilterAndWildcards("foo.*", Array.Empty<int>());
     }
 
     [Fact]
@@ -293,103 +291,60 @@ public class NatsPcgMemberMappingValidatorTests
     }
 
     [Fact]
-    public void ValidateFilterAndWildcards_SentinelMinusOne_NoException()
+    public void ValidatePartitioningFilters_ValidMultipleFilters_NoException()
     {
-        // [-1] sentinel: partition by full subject
-        NatsPcgMemberMappingValidator.ValidateFilterAndWildcards("foo.*", new[] { -1 });
+        NatsPcgMemberMappingValidator.ValidatePartitioningFilters(new[]
+        {
+            new NatsPcgPartitioningFilter("orders.*", new[] { 1 }),
+            new NatsPcgPartitioningFilter("refunds.*", new[] { 1 }),
+        });
     }
 
     [Fact]
-    public void ValidateFilterAndWildcards_SentinelMinusOneMixedWithOther_ThrowsException()
-    {
-        // [-1] must be the sole element
-        var ex = Assert.Throws<NatsPcgConfigurationException>(() =>
-            NatsPcgMemberMappingValidator.ValidateFilterAndWildcards("foo.*.*.>", new[] { -1, 1 }));
-
-        Assert.Contains("sole element", ex.Message);
-    }
-
-    [Fact]
-    public void ValidateFiltersAndWildcards_ValidMultipleFilters_NoException()
-    {
-        NatsPcgMemberMappingValidator.ValidateFiltersAndWildcards(
-            new[] { "orders.*", "refunds.*" },
-            new[] { 1 });
-    }
-
-    [Fact]
-    public void ValidateFiltersAndWildcards_NullFilters_ThrowsException()
+    public void ValidatePartitioningFilters_NullFilters_ThrowsException()
     {
         var ex = Assert.Throws<NatsPcgConfigurationException>(() =>
-            NatsPcgMemberMappingValidator.ValidateFiltersAndWildcards(null!, new[] { 1 }));
+            NatsPcgMemberMappingValidator.ValidatePartitioningFilters(null!));
 
-        Assert.Contains("at least one element", ex.Message);
+        Assert.Contains("At least one partitioning filter", ex.Message);
     }
 
     [Fact]
-    public void ValidateFiltersAndWildcards_EmptyFilters_ThrowsException()
+    public void ValidatePartitioningFilters_EmptyFilters_ThrowsException()
     {
         var ex = Assert.Throws<NatsPcgConfigurationException>(() =>
-            NatsPcgMemberMappingValidator.ValidateFiltersAndWildcards(Array.Empty<string>(), new[] { 1 }));
+            NatsPcgMemberMappingValidator.ValidatePartitioningFilters(Array.Empty<NatsPcgPartitioningFilter>()));
 
-        Assert.Contains("at least one element", ex.Message);
+        Assert.Contains("At least one partitioning filter", ex.Message);
     }
 
     [Fact]
-    public void ValidateFiltersAndWildcards_FilterWithoutWildcard_ThrowsException()
+    public void ValidatePartitioningFilters_FilterWithoutWildcard_ThrowsException()
     {
         var ex = Assert.Throws<NatsPcgConfigurationException>(() =>
-            NatsPcgMemberMappingValidator.ValidateFiltersAndWildcards(
-                new[] { "orders.*", "refunds.bar" },
-                new[] { 1 }));
+            NatsPcgMemberMappingValidator.ValidatePartitioningFilters(new[]
+            {
+                new NatsPcgPartitioningFilter("orders.*", new[] { 1 }),
+                new NatsPcgPartitioningFilter("refunds.bar", new[] { 1 }),
+            }));
 
         Assert.Contains("at least one '*' wildcard", ex.Message);
     }
 
     [Fact]
-    public void ValidateFiltersAndWildcards_SentinelMinusOne_NoException()
+    public void ValidatePartitioningFilters_EmptyWildcards_FullSubject_NoException()
     {
-        NatsPcgMemberMappingValidator.ValidateFiltersAndWildcards(
-            new[] { "orders.*", "refunds.*" },
-            new[] { -1 });
+        NatsPcgMemberMappingValidator.ValidatePartitioningFilters(new[]
+        {
+            new NatsPcgPartitioningFilter("orders.*", Array.Empty<int>()),
+            new NatsPcgPartitioningFilter("refunds.*", Array.Empty<int>()),
+        });
     }
 
     [Fact]
-    public void ValidateFiltersAndWildcards_SentinelMinusOneMixed_ThrowsException()
+    public void IsPartitionByFullSubject_EmptyArray_ReturnsTrue()
     {
-        var ex = Assert.Throws<NatsPcgConfigurationException>(() =>
-            NatsPcgMemberMappingValidator.ValidateFiltersAndWildcards(
-                new[] { "orders.*.*" },
-                new[] { -1, 1 }));
-
-        Assert.Contains("sole element", ex.Message);
-    }
-
-    [Fact]
-    public void ResolveWildcardPositions_ExplicitPositions_ReturnsSame()
-    {
-        var result = NatsPcgMemberMappingValidator.ResolveWildcardPositions("foo.*.*.>", new[] { 1, 2 });
-        Assert.Equal(new[] { 1, 2 }, result);
-    }
-
-    [Fact]
-    public void ResolveWildcardPositions_SentinelMinusOne_ReturnsAllPositions()
-    {
-        var result = NatsPcgMemberMappingValidator.ResolveWildcardPositions("foo.*.*.>", new[] { -1 });
-        Assert.Equal(new[] { 1, 2 }, result);
-    }
-
-    [Fact]
-    public void ResolveWildcardPositions_SentinelMinusOne_SingleWildcard()
-    {
-        var result = NatsPcgMemberMappingValidator.ResolveWildcardPositions("foo.*", new[] { -1 });
-        Assert.Equal(new[] { 1 }, result);
-    }
-
-    [Fact]
-    public void IsPartitionByFullSubject_SentinelMinusOne_ReturnsTrue()
-    {
-        Assert.True(NatsPcgMemberMappingValidator.IsPartitionByFullSubject(new[] { -1 }));
+        Assert.True(NatsPcgMemberMappingValidator.IsPartitionByFullSubject(Array.Empty<int>()));
     }
 
     [Fact]

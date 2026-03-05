@@ -39,17 +39,17 @@ public class NatsPcgStaticExtensionsTests
                 streamName,
                 groupName,
                 maxNumMembers: 3,
-                filter: "test.>");
+                filters: ["test.>"]);
 
             Assert.Equal(3u, config.MaxMembers);
-            Assert.Equal("test.>", config.Filter);
+            Assert.Equal(new[] { "test.>" }, config.Filters);
             Assert.Null(config.Members);
             Assert.Null(config.MemberMappings);
 
             // Get the config back
             var retrieved = await js.GetPcgStaticConfigAsync(streamName, groupName);
             Assert.Equal(config.MaxMembers, retrieved.MaxMembers);
-            Assert.Equal(config.Filter, retrieved.Filter);
+            Assert.Equal(config.Filters, retrieved.Filters);
 
             // Clean up
             await js.DeletePcgStaticAsync(streamName, groupName);
@@ -187,9 +187,9 @@ public class NatsPcgStaticExtensionsTests
     {
         var members = new[] { "a", "b", "c" };
 
-        var filtersA = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 6, null, "a");
-        var filtersB = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 6, null, "b");
-        var filtersC = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 6, null, "c");
+        var filtersA = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 6, null, "a", ">");
+        var filtersB = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 6, null, "b", ">");
+        var filtersC = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 6, null, "c", ">");
 
         // With 6 partitions and 3 members (sorted: a, b, c):
         // Using contiguous block algorithm (matches Go implementation):
@@ -210,11 +210,23 @@ public class NatsPcgStaticExtensionsTests
             new NatsPcgMemberMapping("member2", [1, 3, 5]),
         };
 
-        var filters1 = NatsPcgPartitionDistributor.GeneratePartitionFilters(null, 6, mappings, "member1");
-        var filters2 = NatsPcgPartitionDistributor.GeneratePartitionFilters(null, 6, mappings, "member2");
+        var filters1 = NatsPcgPartitionDistributor.GeneratePartitionFilters(null, 6, mappings, "member1", ">");
+        var filters2 = NatsPcgPartitionDistributor.GeneratePartitionFilters(null, 6, mappings, "member2", ">");
 
         Assert.Equal(new[] { "0.>", "2.>", "4.>" }, filters1);
         Assert.Equal(new[] { "1.>", "3.>", "5.>" }, filters2);
+    }
+
+    [Fact]
+    public void PartitionDistributor_WithFilter()
+    {
+        var members = new[] { "a", "b" };
+
+        var filtersA = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 4, null, "a", "orders.*");
+        var filtersB = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 4, null, "b", "orders.*");
+
+        Assert.Equal(new[] { "0.orders.*", "1.orders.*" }, filtersA);
+        Assert.Equal(new[] { "2.orders.*", "3.orders.*" }, filtersB);
     }
 
     [Fact]
@@ -293,7 +305,7 @@ public class NatsPcgStaticExtensionsTests
                 streamName,
                 groupName,
                 maxNumMembers: 2,
-                filter: "orders.*",
+                filters: ["orders.*"],
                 members: ["m1", "m2"]);
 
             // Publish test messages
@@ -396,7 +408,7 @@ public class NatsPcgStaticExtensionsTests
                 streamName,
                 groupName,
                 maxNumMembers: 1,
-                filter: "test.*",
+                filters: ["test.*"],
                 members: ["worker"]);
 
             // Publish a message
@@ -447,16 +459,10 @@ public class NatsPcgStaticExtensionsTests
 
             Assert.Equal(3u, config.MaxMembers);
             Assert.Equal(new[] { "orders.*", "refunds.*" }, config.Filters);
-            Assert.Null(config.Filter);
 
             // Verify config round-trip
             var retrieved = await js.GetPcgStaticConfigAsync(streamName, groupName);
             Assert.Equal(new[] { "orders.*", "refunds.*" }, retrieved.Filters);
-
-            // Verify GetEffectiveFilters prefers Filters over Filter
-            var effective = retrieved.GetEffectiveFilters();
-            Assert.NotNull(effective);
-            Assert.Equal(new[] { "orders.*", "refunds.*" }, effective);
 
             await js.DeletePcgStaticAsync(streamName, groupName);
         }

@@ -25,8 +25,7 @@ public static class NatsPcgElasticExtensions
     /// <param name="streamName">Name of the source stream.</param>
     /// <param name="consumerGroupName">Name of the consumer group.</param>
     /// <param name="maxNumMembers">Maximum number of members (also the number of partitions).</param>
-    /// <param name="filter">Subject filter for the consumer group.</param>
-    /// <param name="partitioningWildcards">Wildcard positions for partitioning (1-indexed).</param>
+    /// <param name="partitioningFilters">Partitioning filters, each pairing a subject filter with wildcard positions.</param>
     /// <param name="maxBufferedMessages">Optional maximum number of buffered messages.</param>
     /// <param name="maxBufferedBytes">Optional maximum bytes of buffered messages.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -36,73 +35,17 @@ public static class NatsPcgElasticExtensions
         string streamName,
         string consumerGroupName,
         uint maxNumMembers,
-        string filter,
-        int[] partitioningWildcards,
+        NatsPcgPartitioningFilter[] partitioningFilters,
         long? maxBufferedMessages = null,
         long? maxBufferedBytes = null,
         CancellationToken cancellationToken = default)
     {
-        ValidateConfig(maxNumMembers, filter, partitioningWildcards);
+        ValidateConfig(maxNumMembers, partitioningFilters);
 
         var config = new NatsPcgElasticConfig
         {
             MaxMembers = maxNumMembers,
-            Filter = filter,
-            PartitioningWildcards = partitioningWildcards,
-            MaxBufferedMsgs = maxBufferedMessages,
-            MaxBufferedBytes = maxBufferedBytes,
-        };
-
-        // Create the work-queue stream that sources from the original stream
-        await CreateWorkQueueStreamAsync(js, streamName, consumerGroupName, config, cancellationToken).ConfigureAwait(false);
-
-        // Store config in KV
-        var kv = js.Connection.CreateKeyValueStoreContext();
-        var store = await GetOrCreateKvStoreAsync(kv, cancellationToken).ConfigureAwait(false);
-
-        string key = GetKvKey(streamName, consumerGroupName);
-
-        ulong revision = await store.CreateAsync(key, config, serializer: NatsPcgJsonSerializer<NatsPcgElasticConfig>.Default, cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        return config with { Revision = revision };
-    }
-
-    /// <summary>
-    /// Creates an elastic consumer group with multiple subject filters.
-    /// <para>
-    /// <b>Compatibility note:</b> Multi-filter and the <c>[-1]</c> sentinel are .NET-only extensions
-    /// ([-1] requires NATS server 2.12+) not recognized by other Orbit implementations.
-    /// </para>
-    /// </summary>
-    /// <param name="js">JetStream context.</param>
-    /// <param name="streamName">Name of the source stream.</param>
-    /// <param name="consumerGroupName">Name of the consumer group.</param>
-    /// <param name="maxNumMembers">Maximum number of members (also the number of partitions).</param>
-    /// <param name="filters">Subject filters for the consumer group.</param>
-    /// <param name="partitioningWildcards">Wildcard positions for partitioning (1-indexed). Use <c>[-1]</c> to partition by the entire subject.</param>
-    /// <param name="maxBufferedMessages">Optional maximum number of buffered messages.</param>
-    /// <param name="maxBufferedBytes">Optional maximum bytes of buffered messages.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The created configuration.</returns>
-    public static async Task<NatsPcgElasticConfig> CreatePcgElasticAsync(
-        this INatsJSContext js,
-        string streamName,
-        string consumerGroupName,
-        uint maxNumMembers,
-        string[] filters,
-        int[] partitioningWildcards,
-        long? maxBufferedMessages = null,
-        long? maxBufferedBytes = null,
-        CancellationToken cancellationToken = default)
-    {
-        ValidateMultiFilterConfig(maxNumMembers, filters, partitioningWildcards);
-
-        var config = new NatsPcgElasticConfig
-        {
-            MaxMembers = maxNumMembers,
-            Filter = filters[0],
-            Filters = filters,
-            PartitioningWildcards = partitioningWildcards,
+            PartitioningFilters = partitioningFilters,
             MaxBufferedMsgs = maxBufferedMessages,
             MaxBufferedBytes = maxBufferedBytes,
         };
@@ -515,11 +458,18 @@ public static class NatsPcgElasticExtensions
     /// <returns>Array of partition filters.</returns>
     public static string[] GetPcgElasticPartitionFilters(this NatsPcgElasticConfig config, string memberName)
     {
-        return NatsPcgPartitionDistributor.GeneratePartitionFilters(
-            config.Members,
-            config.MaxMembers,
-            config.MemberMappings,
-            memberName);
+        var filters = new List<string>();
+        foreach (var pf in config.PartitioningFilters)
+        {
+            filters.AddRange(NatsPcgPartitionDistributor.GeneratePartitionFilters(
+                config.Members,
+                config.MaxMembers,
+                config.MemberMappings,
+                memberName,
+                pf.Filter));
+        }
+
+        return filters.ToArray();
     }
 
     /// <summary>
@@ -545,7 +495,7 @@ public static class NatsPcgElasticExtensions
     }
 
     // ReSharper disable ParameterOnlyUsedForPreconditionCheck.Local
-    private static void ValidateConfig(uint maxNumMembers, string filter, int[] partitioningWildcards)
+    private static void ValidateConfig(uint maxNumMembers, NatsPcgPartitioningFilter[] partitioningFilters)
     {
         // ReSharper restore ParameterOnlyUsedForPreconditionCheck.Local
         if (maxNumMembers == 0)
@@ -553,19 +503,7 @@ public static class NatsPcgElasticExtensions
             throw new NatsPcgConfigurationException("maxNumMembers must be greater than 0");
         }
 
-        NatsPcgMemberMappingValidator.ValidateFilterAndWildcards(filter, partitioningWildcards);
-    }
-
-    // ReSharper disable ParameterOnlyUsedForPreconditionCheck.Local
-    private static void ValidateMultiFilterConfig(uint maxNumMembers, string[] filters, int[] partitioningWildcards)
-    {
-        // ReSharper restore ParameterOnlyUsedForPreconditionCheck.Local
-        if (maxNumMembers == 0)
-        {
-            throw new NatsPcgConfigurationException("maxNumMembers must be greater than 0");
-        }
-
-        NatsPcgMemberMappingValidator.ValidateFiltersAndWildcards(filters, partitioningWildcards);
+        NatsPcgMemberMappingValidator.ValidatePartitioningFilters(partitioningFilters);
     }
 
     private static async Task CreateWorkQueueStreamAsync(
@@ -577,13 +515,10 @@ public static class NatsPcgElasticExtensions
     {
         string workQueueStreamName = GetWorkQueueStreamName(streamName, consumerGroupName);
 
-        var effectiveFilters = config.GetEffectiveFilters();
-        bool isFullSubject = NatsPcgMemberMappingValidator.IsPartitionByFullSubject(config.PartitioningWildcards);
-
         var subjectTransforms = new List<SubjectTransform>();
-        foreach (var filter in effectiveFilters)
+        foreach (var pf in config.PartitioningFilters)
         {
-            subjectTransforms.Add(BuildSubjectTransform(filter, config.MaxMembers, config.PartitioningWildcards, isFullSubject));
+            subjectTransforms.Add(BuildSubjectTransform(pf, config.MaxMembers));
         }
 
         var sources = new List<StreamSource>
@@ -615,11 +550,13 @@ public static class NatsPcgElasticExtensions
         await js.CreateStreamAsync(streamConfig, cancellationToken).ConfigureAwait(false);
     }
 
-    private static SubjectTransform BuildSubjectTransform(string filter, uint maxMembers, int[] partitioningWildcards, bool isFullSubject)
+    private static SubjectTransform BuildSubjectTransform(NatsPcgPartitioningFilter pf, uint maxMembers)
     {
+        bool isFullSubject = NatsPcgMemberMappingValidator.IsPartitionByFullSubject(pf.PartitioningWildcards);
+
         // Build subject transform: add partition prefix based on wildcards
         // Replace * wildcards with {{wildcard(N)}} in the filter
-        var filterTokens = filter.Split('.');
+        var filterTokens = pf.Filter.Split('.');
         int wildcardIndex = 1;
         for (int i = 0; i < filterTokens.Length; i++)
         {
@@ -640,7 +577,7 @@ public static class NatsPcgElasticExtensions
         }
         else
         {
-            string wildcardStr = string.Join(",", partitioningWildcards);
+            string wildcardStr = string.Join(",", pf.PartitioningWildcards);
             partitionFunction = $"{{{{Partition({maxMembers},{wildcardStr})}}}}";
         }
 
@@ -648,7 +585,7 @@ public static class NatsPcgElasticExtensions
 
         return new SubjectTransform
         {
-            Src = filter,
+            Src = pf.Filter,
             Dest = subjectTransform,
         };
     }

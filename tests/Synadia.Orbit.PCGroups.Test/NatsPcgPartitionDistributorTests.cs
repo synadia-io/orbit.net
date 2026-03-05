@@ -19,9 +19,9 @@ public class NatsPcgPartitionDistributorTests
         // m1 (index 0) gets partitions: 0, 1
         // m2 (index 1) gets partitions: 2, 3
         // m3 (index 2) gets partitions: 4, 5
-        var filtersM1 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 6, null, "m1");
-        var filtersM2 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 6, null, "m2");
-        var filtersM3 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 6, null, "m3");
+        var filtersM1 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 6, null, "m1", ">");
+        var filtersM2 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 6, null, "m2", ">");
+        var filtersM3 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 6, null, "m3", ">");
 
         Assert.Equal(new[] { "0.>", "1.>" }, filtersM1);
         Assert.Equal(new[] { "2.>", "3.>" }, filtersM2);
@@ -37,9 +37,9 @@ public class NatsPcgPartitionDistributorTests
         // m1 gets partitions: 0, 1, 6 (2 regular + 1 remainder)
         // m2 gets partitions: 2, 3
         // m3 gets partitions: 4, 5
-        var filtersM1 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 7, null, "m1");
-        var filtersM2 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 7, null, "m2");
-        var filtersM3 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 7, null, "m3");
+        var filtersM1 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 7, null, "m1", ">");
+        var filtersM2 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 7, null, "m2", ">");
+        var filtersM3 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 7, null, "m3", ">");
 
         Assert.Equal(new[] { "0.>", "1.>", "6.>" }, filtersM1);
         Assert.Equal(new[] { "2.>", "3.>" }, filtersM2);
@@ -55,9 +55,9 @@ public class NatsPcgPartitionDistributorTests
         // m1 gets partitions: 0, 1, 6 (2 regular + 1 remainder)
         // m2 gets partitions: 2, 3, 7 (2 regular + 1 remainder)
         // m3 gets partitions: 4, 5
-        var filtersM1 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 8, null, "m1");
-        var filtersM2 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 8, null, "m2");
-        var filtersM3 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 8, null, "m3");
+        var filtersM1 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 8, null, "m1", ">");
+        var filtersM2 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 8, null, "m2", ">");
+        var filtersM3 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 8, null, "m3", ">");
 
         Assert.Equal(new[] { "0.>", "1.>", "6.>" }, filtersM1);
         Assert.Equal(new[] { "2.>", "3.>", "7.>" }, filtersM2);
@@ -73,8 +73,8 @@ public class NatsPcgPartitionDistributorTests
             new NatsPcgMemberMapping("m2", new[] { 1 }),
         };
 
-        var filtersM1 = NatsPcgPartitionDistributor.GeneratePartitionFilters(null, 3, mappings, "m1");
-        var filtersM2 = NatsPcgPartitionDistributor.GeneratePartitionFilters(null, 3, mappings, "m2");
+        var filtersM1 = NatsPcgPartitionDistributor.GeneratePartitionFilters(null, 3, mappings, "m1", ">");
+        var filtersM2 = NatsPcgPartitionDistributor.GeneratePartitionFilters(null, 3, mappings, "m2", ">");
 
         Assert.Equal(new[] { "0.>", "2.>" }, filtersM1);
         Assert.Equal(new[] { "1.>" }, filtersM2);
@@ -86,7 +86,7 @@ public class NatsPcgPartitionDistributorTests
         var members = new[] { "m1", "m2" };
 
         var ex = Assert.Throws<NatsPcgMembershipException>(() =>
-            NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 2, null, "m3"));
+            NatsPcgPartitionDistributor.GeneratePartitionFilters(members, 2, null, "m3", ">"));
 
         Assert.Contains("not found", ex.Message);
     }
@@ -95,7 +95,7 @@ public class NatsPcgPartitionDistributorTests
     public void GeneratePartitionFilters_EmptyMembership_ReturnsAllPartitions()
     {
         // When membership is null/empty, any member gets all partitions
-        var filters = NatsPcgPartitionDistributor.GeneratePartitionFilters(null, 3, null, "anyMember");
+        var filters = NatsPcgPartitionDistributor.GeneratePartitionFilters(null, 3, null, "anyMember", ">");
 
         Assert.Equal(new[] { "0.>", "1.>", "2.>" }, filters);
     }
@@ -107,8 +107,8 @@ public class NatsPcgPartitionDistributorTests
         var members1 = new[] { "c", "a", "b" };
         var members2 = new[] { "a", "b", "c" };
 
-        var filters1 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members1, 3, null, "a");
-        var filters2 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members2, 3, null, "a");
+        var filters1 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members1, 3, null, "a", ">");
+        var filters2 = NatsPcgPartitionDistributor.GeneratePartitionFilters(members2, 3, null, "a", ">");
 
         Assert.Equal(filters1, filters2);
     }

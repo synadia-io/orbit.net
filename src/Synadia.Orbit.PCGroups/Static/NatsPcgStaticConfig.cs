@@ -17,18 +17,7 @@ public sealed record NatsPcgStaticConfig
     public required uint MaxMembers { get; init; }
 
     /// <summary>
-    /// Gets the optional filter for the consumer group.
-    /// </summary>
-    [JsonPropertyName("filter")]
-    public string? Filter { get; init; }
-
-    /// <summary>
     /// Gets the optional list of subject filters for the consumer group.
-    /// When set, takes precedence over <see cref="Filter"/>.
-    /// <para>
-    /// <b>Compatibility note:</b> Multi-filter is a .NET-only extension. Other Orbit implementations
-    /// will only see the single <see cref="Filter"/> field.
-    /// </para>
     /// </summary>
     [JsonPropertyName("filters")]
     public string[]? Filters { get; init; }
@@ -58,23 +47,4 @@ public sealed record NatsPcgStaticConfig
     /// <returns>True if the member is in the membership.</returns>
     public bool IsInMembership(string name)
         => NatsPcgPartitionDistributor.IsInMembership(Members, MemberMappings, name);
-
-    /// <summary>
-    /// Gets the effective filters, preferring <see cref="Filters"/> over <see cref="Filter"/>.
-    /// </summary>
-    /// <returns>The effective filters array, or null if no filters are configured.</returns>
-    public string[]? GetEffectiveFilters()
-    {
-        if (Filters != null && Filters.Length > 0)
-        {
-            return Filters;
-        }
-
-        if (!string.IsNullOrEmpty(Filter))
-        {
-            return new[] { Filter! };
-        }
-
-        return null;
-    }
 }
