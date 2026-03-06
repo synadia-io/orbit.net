@@ -216,6 +216,8 @@ Example: For `orders.*` with transform `{{partition(3,1)}}.orders.{{wildcard(1)}
 - `ListPcgElasticActiveMembersAsync` - List active members
 - `AddPcgElasticMembersAsync` - Add members to the group
 - `DeletePcgElasticMembersAsync` - Remove members from the group
+- `AddPcgElasticFiltersAsync` - Add partitioning filters to the group
+- `DeletePcgElasticFiltersAsync` - Remove partitioning filters from the group
 - `SetPcgElasticMemberMappingsAsync` - Set explicit partition mappings
 - `DeletePcgElasticMemberMappingsAsync` - Remove mappings (revert to auto-distribution)
 - `IsInPcgElasticMembershipAndActiveAsync` - Check if a member is in the group and active
