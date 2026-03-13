@@ -114,6 +114,136 @@ public class NatsPcgElasticExtensionsTests
     }
 
     [Fact]
+    public async Task AddAndRemoveFilters_Success()
+    {
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
+        var js = nats.CreateJetStreamContext();
+
+        var streamName = $"test-stream-{Guid.NewGuid():N}";
+        await js.CreateStreamAsync(new StreamConfig
+        {
+            Name = streamName,
+            Subjects = new[] { "orders.*", "refunds.*" },
+        });
+
+        try
+        {
+            var groupName = $"test-group-{Guid.NewGuid():N}";
+            await js.CreatePcgElasticAsync(
+                streamName,
+                groupName,
+                maxNumMembers: 3,
+                partitioningFilters: [new NatsPcgPartitioningFilter("orders.*", [1])]);
+
+            var filters = await js.AddPcgElasticFiltersAsync(streamName, groupName, [
+                new NatsPcgPartitioningFilter("refunds.*", [1]),
+                new NatsPcgPartitioningFilter("orders.*", [1]),
+            ]);
+            Assert.Equal(2, filters.Length);
+            Assert.Equal("orders.*", filters[0].Filter);
+            Assert.Equal(new[] { 1 }, filters[0].PartitioningWildcards);
+            Assert.Equal("refunds.*", filters[1].Filter);
+            Assert.Equal(new[] { 1 }, filters[1].PartitioningWildcards);
+
+            var config = await js.GetPcgElasticConfigAsync(streamName, groupName);
+            Assert.Equal(2, config.PartitioningFilters.Length);
+            Assert.Equal("orders.*", config.PartitioningFilters[0].Filter);
+            Assert.Equal(new[] { 1 }, config.PartitioningFilters[0].PartitioningWildcards);
+            Assert.Equal("refunds.*", config.PartitioningFilters[1].Filter);
+            Assert.Equal(new[] { 1 }, config.PartitioningFilters[1].PartitioningWildcards);
+
+            var workQueueStreamName = $"{streamName}-{groupName}";
+            var workQueueStream = await js.GetStreamAsync(workQueueStreamName);
+            var source = Assert.Single(workQueueStream.Info.Config.Sources!);
+            var sourceFilters = source.SubjectTransforms!.Select(x => x.Src).ToArray();
+            Assert.Equal(new[] { "orders.*", "refunds.*" }, sourceFilters);
+
+            filters = await js.DeletePcgElasticFiltersAsync(streamName, groupName, [new NatsPcgPartitioningFilter("orders.*", [1])]);
+            Assert.Single(filters);
+            Assert.Equal("refunds.*", filters[0].Filter);
+            Assert.Equal(new[] { 1 }, filters[0].PartitioningWildcards);
+
+            config = await js.GetPcgElasticConfigAsync(streamName, groupName);
+            Assert.Single(config.PartitioningFilters);
+            Assert.Equal("refunds.*", config.PartitioningFilters[0].Filter);
+            Assert.Equal(new[] { 1 }, config.PartitioningFilters[0].PartitioningWildcards);
+
+            workQueueStream = await js.GetStreamAsync(workQueueStreamName);
+            source = Assert.Single(workQueueStream.Info.Config.Sources!);
+            sourceFilters = source.SubjectTransforms!.Select(x => x.Src).ToArray();
+            Assert.Equal(new[] { "refunds.*" }, sourceFilters);
+
+            await js.DeletePcgElasticAsync(streamName, groupName);
+        }
+        finally
+        {
+            await js.DeleteStreamAsync(streamName);
+        }
+    }
+
+    [Fact]
+    public async Task Validation_CannotRemoveAllFilters()
+    {
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
+        var js = nats.CreateJetStreamContext();
+
+        var streamName = $"test-stream-{Guid.NewGuid():N}";
+        await js.CreateStreamAsync(new StreamConfig
+        {
+            Name = streamName,
+            Subjects = new[] { "orders.>" },
+        });
+
+        try
+        {
+            var groupName = $"test-group-{Guid.NewGuid():N}";
+            await js.CreatePcgElasticAsync(streamName, groupName, 3, [new NatsPcgPartitioningFilter("orders.*", [1])]);
+
+            var exception = await Assert.ThrowsAsync<NatsPcgConfigurationException>(() =>
+                js.DeletePcgElasticFiltersAsync(streamName, groupName, [new NatsPcgPartitioningFilter("orders.*", [1])]));
+
+            Assert.Contains("At least one partitioning filter", exception.Message);
+
+            await js.DeletePcgElasticAsync(streamName, groupName);
+        }
+        finally
+        {
+            await js.DeleteStreamAsync(streamName);
+        }
+    }
+
+    [Fact]
+    public async Task Validation_AddInvalidFilter_ThrowsException()
+    {
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
+        var js = nats.CreateJetStreamContext();
+
+        var streamName = $"test-stream-{Guid.NewGuid():N}";
+        await js.CreateStreamAsync(new StreamConfig
+        {
+            Name = streamName,
+            Subjects = new[] { "orders.>", "refunds.>" },
+        });
+
+        try
+        {
+            var groupName = $"test-group-{Guid.NewGuid():N}";
+            await js.CreatePcgElasticAsync(streamName, groupName, 3, [new NatsPcgPartitioningFilter("orders.*", [1])]);
+
+            var exception = await Assert.ThrowsAsync<NatsPcgConfigurationException>(() =>
+                js.AddPcgElasticFiltersAsync(streamName, groupName, [new NatsPcgPartitioningFilter("refunds.>", [1])]));
+
+            Assert.Contains("wildcard", exception.Message);
+
+            await js.DeletePcgElasticAsync(streamName, groupName);
+        }
+        finally
+        {
+            await js.DeleteStreamAsync(streamName);
+        }
+    }
+
+    [Fact]
     public async Task SetMemberMappings_Success()
     {
         await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
