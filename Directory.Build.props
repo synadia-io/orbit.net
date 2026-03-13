@@ -75,8 +75,7 @@
 
   <!--  Dependencies for netstandard2.0 only -->
   <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
-    <PackageReference Include="System.Memory" />
-    <PackageReference Include="System.Buffers" />
+    <PackageReference Include="Microsoft.Bcl.Memory" />
     <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" />
   </ItemGroup>
 
