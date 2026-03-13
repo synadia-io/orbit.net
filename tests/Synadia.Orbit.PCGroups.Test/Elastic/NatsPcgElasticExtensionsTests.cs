@@ -280,7 +280,7 @@ public class NatsPcgElasticExtensionsTests
             maxNumMembers: 3,
             partitioningFilters: Array.Empty<NatsPcgPartitioningFilter>());
 
-        Assert.Equal((uint)3, config.MaxMembers);
+        Assert.Equal(3U, config.MaxMembers);
         Assert.Empty(config.PartitioningFilters);
 
         // Verify the work-queue stream was created with ">" as the default source transform
@@ -290,8 +290,8 @@ public class NatsPcgElasticExtensionsTests
         var sources = streamInfo.Info.Config.Sources;
         Assert.NotNull(sources);
         Assert.Single(sources);
-        Assert.Single(sources[0].SubjectTransforms);
-        Assert.Equal(">", sources[0].SubjectTransforms[0].Src);
+        Assert.Single(sources.First().SubjectTransforms!);
+        Assert.Equal(">", sources.First().SubjectTransforms!.First().Src);
     }
 
     [Fact]
