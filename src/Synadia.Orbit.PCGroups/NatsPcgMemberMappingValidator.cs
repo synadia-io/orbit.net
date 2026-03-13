@@ -89,23 +89,23 @@ public static class NatsPcgMemberMappingValidator
             throw new NatsPcgConfigurationException("Filter is required for elastic consumer groups");
         }
 
+        if (partitioningWildcards == null)
+        {
+            throw new NatsPcgConfigurationException("PartitioningWildcards must not be null");
+        }
+
+        // Empty array means partition by full subject - no wildcard requirements
+        if (IsPartitionByFullSubject(partitioningWildcards))
+        {
+            return;
+        }
+
         // Count wildcards in filter
         int numWildcards = CountWildcards(filter);
 
         if (numWildcards < 1)
         {
             throw new NatsPcgConfigurationException("Filter must contain at least one '*' wildcard");
-        }
-
-        if (partitioningWildcards == null)
-        {
-            throw new NatsPcgConfigurationException("PartitioningWildcards must not be null");
-        }
-
-        // Empty array means partition by full subject
-        if (IsPartitionByFullSubject(partitioningWildcards))
-        {
-            return;
         }
 
         if (partitioningWildcards.Length > numWildcards)
@@ -149,9 +149,9 @@ public static class NatsPcgMemberMappingValidator
     /// <exception cref="NatsPcgConfigurationException">Thrown when validation fails.</exception>
     public static void ValidatePartitioningFilters(NatsPcgPartitioningFilter[] partitioningFilters)
     {
-        if (partitioningFilters == null || partitioningFilters.Length == 0)
+        if (partitioningFilters == null)
         {
-            throw new NatsPcgConfigurationException("At least one partitioning filter must be specified");
+            return;
         }
 
         foreach (var pf in partitioningFilters)

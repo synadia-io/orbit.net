@@ -301,21 +301,15 @@ public class NatsPcgMemberMappingValidatorTests
     }
 
     [Fact]
-    public void ValidatePartitioningFilters_NullFilters_ThrowsException()
+    public void ValidatePartitioningFilters_NullFilters_NoException()
     {
-        var ex = Assert.Throws<NatsPcgConfigurationException>(() =>
-            NatsPcgMemberMappingValidator.ValidatePartitioningFilters(null!));
-
-        Assert.Contains("At least one partitioning filter", ex.Message);
+        NatsPcgMemberMappingValidator.ValidatePartitioningFilters(null!);
     }
 
     [Fact]
-    public void ValidatePartitioningFilters_EmptyFilters_ThrowsException()
+    public void ValidatePartitioningFilters_EmptyFilters_NoException()
     {
-        var ex = Assert.Throws<NatsPcgConfigurationException>(() =>
-            NatsPcgMemberMappingValidator.ValidatePartitioningFilters(Array.Empty<NatsPcgPartitioningFilter>()));
-
-        Assert.Contains("At least one partitioning filter", ex.Message);
+        NatsPcgMemberMappingValidator.ValidatePartitioningFilters(Array.Empty<NatsPcgPartitioningFilter>());
     }
 
     [Fact]

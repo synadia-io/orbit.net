@@ -342,14 +342,26 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
     private static string[] GenerateFiltersForMember(NatsPcgElasticConfig config, string memberName)
     {
         var allFilters = new List<string>();
-        foreach (var pf in config.PartitioningFilters)
+        if (config.PartitioningFilters.Length > 0)
+        {
+            foreach (var pf in config.PartitioningFilters)
+            {
+                allFilters.AddRange(NatsPcgPartitionDistributor.GeneratePartitionFilters(
+                    config.Members,
+                    config.MaxMembers,
+                    config.MemberMappings,
+                    memberName,
+                    pf.Filter));
+            }
+        }
+        else
         {
             allFilters.AddRange(NatsPcgPartitionDistributor.GeneratePartitionFilters(
                 config.Members,
                 config.MaxMembers,
                 config.MemberMappings,
                 memberName,
-                pf.Filter));
+                ">"));
         }
 
         return allFilters.ToArray();

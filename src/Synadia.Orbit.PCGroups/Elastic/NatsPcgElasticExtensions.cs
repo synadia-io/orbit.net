@@ -459,14 +459,26 @@ public static class NatsPcgElasticExtensions
     public static string[] GetPcgElasticPartitionFilters(this NatsPcgElasticConfig config, string memberName)
     {
         var filters = new List<string>();
-        foreach (var pf in config.PartitioningFilters)
+        if (config.PartitioningFilters.Length > 0)
+        {
+            foreach (var pf in config.PartitioningFilters)
+            {
+                filters.AddRange(NatsPcgPartitionDistributor.GeneratePartitionFilters(
+                    config.Members,
+                    config.MaxMembers,
+                    config.MemberMappings,
+                    memberName,
+                    pf.Filter));
+            }
+        }
+        else
         {
             filters.AddRange(NatsPcgPartitionDistributor.GeneratePartitionFilters(
                 config.Members,
                 config.MaxMembers,
                 config.MemberMappings,
                 memberName,
-                pf.Filter));
+                ">"));
         }
 
         return filters.ToArray();
@@ -516,9 +528,17 @@ public static class NatsPcgElasticExtensions
         string workQueueStreamName = GetWorkQueueStreamName(streamName, consumerGroupName);
 
         var subjectTransforms = new List<SubjectTransform>();
-        foreach (var pf in config.PartitioningFilters)
+        if (config.PartitioningFilters.Length > 0)
         {
-            subjectTransforms.Add(BuildSubjectTransform(pf, config.MaxMembers));
+            foreach (var pf in config.PartitioningFilters)
+            {
+                subjectTransforms.Add(BuildSubjectTransform(pf, config.MaxMembers));
+            }
+        }
+        else
+        {
+            var defaultFilter = new NatsPcgPartitioningFilter(">", Array.Empty<int>());
+            subjectTransforms.Add(BuildSubjectTransform(defaultFilter, config.MaxMembers));
         }
 
         var sources = new List<StreamSource>

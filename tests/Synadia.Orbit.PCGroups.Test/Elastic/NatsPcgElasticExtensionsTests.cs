@@ -261,19 +261,37 @@ public class NatsPcgElasticExtensionsTests
     }
 
     [Fact]
-    public async Task Validation_PartitioningFiltersRequired()
+    public async Task CreatePcgElastic_EmptyPartitioningFilters_DefaultsToAllSubjects()
     {
         await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
         var js = nats.CreateJetStreamContext();
 
-        var exception = await Assert.ThrowsAsync<NatsPcgConfigurationException>(() =>
-            js.CreatePcgElasticAsync(
-                "stream",
-                "group",
-                maxNumMembers: 3,
-                partitioningFilters: Array.Empty<NatsPcgPartitioningFilter>()));
+        var streamName = $"test-stream-{Guid.NewGuid():N}";
+        await js.CreateStreamAsync(new StreamConfig
+        {
+            Name = streamName,
+            Subjects = ["events.>"],
+        });
 
-        Assert.Contains("At least one partitioning filter", exception.Message);
+        var consumerGroupName = $"cg-{Guid.NewGuid():N}";
+        var config = await js.CreatePcgElasticAsync(
+            streamName,
+            consumerGroupName,
+            maxNumMembers: 3,
+            partitioningFilters: Array.Empty<NatsPcgPartitioningFilter>());
+
+        Assert.Equal((uint)3, config.MaxMembers);
+        Assert.Empty(config.PartitioningFilters);
+
+        // Verify the work-queue stream was created with ">" as the default source transform
+        var wqStreamName = $"pcg-{streamName}-{consumerGroupName}";
+        var streamInfo = await js.GetStreamAsync(wqStreamName);
+        Assert.NotNull(streamInfo);
+        var sources = streamInfo.Info.Config.Sources;
+        Assert.NotNull(sources);
+        Assert.Single(sources);
+        Assert.Single(sources[0].SubjectTransforms);
+        Assert.Equal(">", sources[0].SubjectTransforms[0].Src);
     }
 
     [Fact]
