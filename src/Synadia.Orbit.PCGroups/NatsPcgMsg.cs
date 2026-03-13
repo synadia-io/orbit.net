@@ -87,12 +87,11 @@ public readonly struct NatsPcgMsg<T> : INatsJSMsg<T>
     /// <summary>
     /// Signals that the message will not be processed now and processing can move onto the next message.
     /// </summary>
-    /// <param name="delay">Delay redelivery of the message.</param>
     /// <param name="opts">Ack options.</param>
     /// <param name="cancellationToken">A <see cref="CancellationToken"/> used to cancel the call.</param>
     /// <returns>A <see cref="ValueTask"/> representing the async call.</returns>
-    public ValueTask NakAsync(AckOpts? opts = default, TimeSpan delay = default, CancellationToken cancellationToken = default)
-        => _msg.NakAsync(opts, delay, cancellationToken);
+    public ValueTask NakAsync(AckOpts? opts = default, CancellationToken cancellationToken = default)
+        => _msg.NakAsync(opts, cancellationToken);
 
     /// <summary>
     /// Indicates that work is ongoing and the wait period should be extended.

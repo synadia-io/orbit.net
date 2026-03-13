@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-    <NatsVersion>2.7.2</NatsVersion>
+    <NatsVersion>2.7.3</NatsVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="NATS.Net" Version="$(NatsVersion)" />
@@ -18,8 +18,7 @@
     <PackageVersion Include="System.Diagnostics.DiagnosticSource" Version="8.0.1"/>
     <PackageVersion Include="PolySharp" Version="1.14.1"/>
 
-    <PackageVersion Include="System.Memory" Version="4.5.5"/>
-    <PackageVersion Include="System.Buffers" Version="4.5.1"/>
+    <PackageVersion Include="Microsoft.Bcl.Memory" Version="9.0.14"/>
     <PackageVersion Include="Microsoft.Bcl.AsyncInterfaces" Version="8.0.0"/>
 
     <PackageVersion Include="coverlet.collector" Version="6.0.4"/>
