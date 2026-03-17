@@ -203,14 +203,7 @@ internal sealed class NatsPcgStaticConsumeContext<T> : IAsyncEnumerable<NatsPcgM
 
     private async Task CreateOrGetConsumerAsync(CancellationToken cancellationToken)
     {
-        var filters = NatsPcgPartitionDistributor.GeneratePartitionFilters(
-            _config.Members,
-            _config.MaxMembers,
-            _config.MemberMappings,
-            _memberName);
-
-        // Apply config filter to partition filters
-        var finalFilters = ApplyFilter(filters, _config.Filter);
+        var filters = GenerateFiltersForMember(_config, _memberName);
 
         // Each member gets its own consumer (named after consumer group + member)
         var consumerName = $"{_consumerGroupName}-{_memberName}";
@@ -220,7 +213,7 @@ internal sealed class NatsPcgStaticConsumeContext<T> : IAsyncEnumerable<NatsPcgM
             AckPolicy = _userConfig?.AckPolicy ?? ConsumerConfigAckPolicy.Explicit,
             AckWait = _userConfig?.AckWait ?? NatsPcgConstants.AckWait,
             MaxDeliver = _userConfig?.MaxDeliver ?? -1,
-            FilterSubjects = finalFilters,
+            FilterSubjects = filters,
             PriorityGroups = new[] { NatsPcgConstants.PriorityGroupName },
             PriorityPolicy = ConsumerConfigPriorityPolicy.PinnedClient,
             PinnedTTL = NatsPcgConstants.ConsumerIdleTimeout,
@@ -236,6 +229,32 @@ internal sealed class NatsPcgStaticConsumeContext<T> : IAsyncEnumerable<NatsPcgM
             // Consumer might already exist with different filter - try to get it
             _consumer = await _js.GetConsumerAsync(_streamName, consumerName, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    private static string[] GenerateFiltersForMember(NatsPcgStaticConfig config, string memberName)
+    {
+        if (config.Filters is { Length: > 0 })
+        {
+            var allFilters = new List<string>();
+            foreach (var f in config.Filters)
+            {
+                allFilters.AddRange(NatsPcgPartitionDistributor.GeneratePartitionFilters(
+                    config.Members,
+                    config.MaxMembers,
+                    config.MemberMappings,
+                    memberName,
+                    f));
+            }
+
+            return allFilters.ToArray();
+        }
+
+        return NatsPcgPartitionDistributor.GeneratePartitionFilters(
+            config.Members,
+            config.MaxMembers,
+            config.MemberMappings,
+            memberName,
+            ">");
     }
 
     private async Task WatchConfigLoopAsync()
@@ -320,24 +339,6 @@ internal sealed class NatsPcgStaticConsumeContext<T> : IAsyncEnumerable<NatsPcgM
         {
             // Expected when stopping
         }
-    }
-
-    private static string[] ApplyFilter(string[] partitionFilters, string? filter)
-    {
-        if (string.IsNullOrEmpty(filter))
-        {
-            return partitionFilters;
-        }
-
-        var result = new string[partitionFilters.Length];
-        for (int i = 0; i < partitionFilters.Length; i++)
-        {
-            // Replace .> with .{filter}
-            var prefix = partitionFilters[i].Substring(0, partitionFilters[i].Length - 1); // Remove ">"
-            result[i] = $"{prefix}{filter}";
-        }
-
-        return result;
     }
 
     // ReSharper disable once StaticMemberInGenericType

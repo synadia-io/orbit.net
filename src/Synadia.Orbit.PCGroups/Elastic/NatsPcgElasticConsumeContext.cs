@@ -260,11 +260,7 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
             config = _config;
         }
 
-        string[] filters = NatsPcgPartitionDistributor.GeneratePartitionFilters(
-            config.Members,
-            config.MaxMembers,
-            config.MemberMappings,
-            _memberName);
+        string[] filters = GenerateFiltersForMember(config, _memberName);
 
         _currentFilters = filters;
 
@@ -313,11 +309,7 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
         }
 
         // Recalculate filters
-        string[] filters = NatsPcgPartitionDistributor.GeneratePartitionFilters(
-            config.Members,
-            config.MaxMembers,
-            config.MemberMappings,
-            _memberName);
+        string[] filters = GenerateFiltersForMember(config, _memberName);
 
         // Only recreate if filters changed
         if (FiltersEqual(filters, _currentFilters))
@@ -345,6 +337,34 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
         };
 
         _consumer = await _js.CreateOrUpdateConsumerAsync(workQueueStreamName, consumerConfig, _cts.Token).ConfigureAwait(false);
+    }
+
+    private static string[] GenerateFiltersForMember(NatsPcgElasticConfig config, string memberName)
+    {
+        var allFilters = new List<string>();
+        if (config.PartitioningFilters.Length > 0)
+        {
+            foreach (var pf in config.PartitioningFilters)
+            {
+                allFilters.AddRange(NatsPcgPartitionDistributor.GeneratePartitionFilters(
+                    config.Members,
+                    config.MaxMembers,
+                    config.MemberMappings,
+                    memberName,
+                    pf.Filter));
+            }
+        }
+        else
+        {
+            allFilters.AddRange(NatsPcgPartitionDistributor.GeneratePartitionFilters(
+                config.Members,
+                config.MaxMembers,
+                config.MemberMappings,
+                memberName,
+                ">"));
+        }
+
+        return allFilters.ToArray();
     }
 
     private async Task WatchConfigLoopAsync()

@@ -23,7 +23,7 @@ public static class NatsPcgStaticExtensions
     /// <param name="streamName">Name of the stream to consume from.</param>
     /// <param name="consumerGroupName">Name of the consumer group.</param>
     /// <param name="maxNumMembers">Maximum number of members (also the number of partitions).</param>
-    /// <param name="filter">Optional subject filter.</param>
+    /// <param name="filters">Optional list of subject filters.</param>
     /// <param name="members">Optional list of allowed member names.</param>
     /// <param name="memberMappings">Optional explicit member-to-partition mappings.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -33,7 +33,7 @@ public static class NatsPcgStaticExtensions
         string streamName,
         string consumerGroupName,
         uint maxNumMembers,
-        string? filter = null,
+        string[]? filters = null,
         string[]? members = null,
         NatsPcgMemberMapping[]? memberMappings = null,
         CancellationToken cancellationToken = default)
@@ -46,7 +46,7 @@ public static class NatsPcgStaticExtensions
         var config = new NatsPcgStaticConfig
         {
             MaxMembers = maxNumMembers,
-            Filter = filter,
+            Filters = filters,
             Members = members,
             MemberMappings = memberMappings,
         };
