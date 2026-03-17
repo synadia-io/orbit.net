@@ -39,6 +39,7 @@ public class GoProcessTest
     [Fact]
     public async Task Go_process_exits_on_stdin_close()
     {
+        // lang=go
         await using var go = await GoProcess.RunCodeAsync(
             """
             package main
@@ -74,6 +75,7 @@ public class GoProcessTest
     [Fact]
     public async Task Go_process_json_communication()
     {
+        // lang=go
         await using var go = await GoProcess.RunCodeAsync(
             """
             package main
@@ -123,6 +125,7 @@ public class GoProcessTest
     {
         var ex = await Assert.ThrowsAsync<GoCompilationException>(async () =>
         {
+            // lang=go
             await using var go = await GoProcess.RunCodeAsync(
                 """
                 package main
@@ -154,7 +157,7 @@ public class GoProcessTest
                 fmt.Println(id)
             }
             """,
-            goModules: new[] { "github.com/nats-io/nuid@latest" });
+            goModules: ["github.com/nats-io/nuid@latest"]);
 
         var id = await go.ReadLineAsync();
         Assert.NotNull(id);
@@ -166,6 +169,7 @@ public class GoProcessTest
     {
         var logs = new List<string>();
 
+        // lang=go
         await using var go = await GoProcess.RunCodeAsync(
             """
             package main
