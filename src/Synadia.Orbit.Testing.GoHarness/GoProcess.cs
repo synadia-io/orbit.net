@@ -48,7 +48,7 @@ public class GoProcess : IAsyncDisposable, IDisposable
     /// </summary>
     /// <param name="goCode">The Go source code to compile and run.</param>
     /// <param name="logger">Optional logging callback.</param>
-    /// <param name="goModules">Optional list of Go module dependencies (e.g. <c>"github.com/nats-io/nats.go@latest"</c>).</param>
+    /// <param name="goModules">Optional list of Go module dependencies (e.g. <c>"github.com/nats-io/nats.go@v1.39.1"</c>).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A <see cref="GoProcess"/> managing the running program.</returns>
     /// <exception cref="GoNotFoundException">Thrown when <c>go</c> is not found on PATH.</exception>
@@ -73,27 +73,27 @@ public class GoProcess : IAsyncDisposable, IDisposable
             var mainGoPath = Path.Combine(tempDir, "main.go");
             File.WriteAllText(mainGoPath, goCode);
 
-            // Initialize Go module
-            await RunGoCommandAsync("mod", "init testharness", tempDir, log, cancellationToken);
+            // Initialize Go module with a valid module path (requires dot in first element)
+            await RunGoCommandAsync(["mod", "init", "example.com/testharness"], tempDir, log, cancellationToken);
 
             // Add module dependencies if specified
             if (goModules != null)
             {
                 foreach (var module in goModules)
                 {
-                    await RunGoCommandAsync("get", module, tempDir, log, cancellationToken);
+                    await RunGoCommandAsync(["get", module], tempDir, log, cancellationToken);
                 }
             }
 
             // Run go mod tidy
-            await RunGoCommandAsync("mod", "tidy", tempDir, log, cancellationToken);
+            await RunGoCommandAsync(["mod", "tidy"], tempDir, log, cancellationToken);
 
             // Build the binary
             var isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
             var binaryName = isWindows ? "testharness.exe" : "testharness";
             var binaryPath = Path.Combine(tempDir, binaryName);
 
-            await RunGoCommandAsync("build", $"-o \"{binaryPath}\" .", tempDir, log, cancellationToken);
+            await RunGoCommandAsync(["build", "-o", binaryPath, "."], tempDir, log, cancellationToken);
 
             log($"Binary: {binaryPath}");
 
@@ -143,7 +143,11 @@ public class GoProcess : IAsyncDisposable, IDisposable
         cancellationToken.ThrowIfCancellationRequested();
         _logger($"-> {line}");
         await _process.StandardInput.WriteLineAsync(line);
+#if NETSTANDARD2_0 || NETSTANDARD2_1
         await _process.StandardInput.FlushAsync();
+#else
+        await _process.StandardInput.FlushAsync(cancellationToken);
+#endif
     }
 
     /// <summary>
@@ -154,7 +158,11 @@ public class GoProcess : IAsyncDisposable, IDisposable
     public async Task<string?> ReadLineAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+#if NETSTANDARD2_0 || NETSTANDARD2_1
         var line = await _process.StandardOutput.ReadLineAsync();
+#else
+        var line = await _process.StandardOutput.ReadLineAsync(cancellationToken);
+#endif
         _logger($"<- {line}");
         return line;
     }
@@ -167,7 +175,11 @@ public class GoProcess : IAsyncDisposable, IDisposable
     public async Task<string> ReadStdErrAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+#if NETSTANDARD2_0 || NETSTANDARD2_1
         return await _process.StandardError.ReadToEndAsync();
+#else
+        return await _process.StandardError.ReadToEndAsync(cancellationToken);
+#endif
     }
 
     /// <summary>
@@ -183,11 +195,13 @@ public class GoProcess : IAsyncDisposable, IDisposable
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
-    public Task WaitForExitAsync(CancellationToken cancellationToken = default)
+    public async Task WaitForExitAsync(CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        _process.WaitForExit();
-        return Task.CompletedTask;
+#if NETSTANDARD2_0 || NETSTANDARD2_1
+        await Task.Run(() => _process.WaitForExit(), cancellationToken);
+#else
+        await _process.WaitForExitAsync(cancellationToken);
+#endif
     }
 
     /// <inheritdoc />
@@ -237,8 +251,7 @@ public class GoProcess : IAsyncDisposable, IDisposable
     }
 
     private static async Task RunGoCommandAsync(
-        string command,
-        string arguments,
+        string[] args,
         string workingDirectory,
         Action<string> log,
         CancellationToken cancellationToken)
@@ -249,7 +262,6 @@ public class GoProcess : IAsyncDisposable, IDisposable
         var psi = new ProcessStartInfo
         {
             FileName = goExe,
-            Arguments = $"{command} {arguments}",
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -257,14 +269,38 @@ public class GoProcess : IAsyncDisposable, IDisposable
             WorkingDirectory = workingDirectory,
         };
 
-        log($"Running: go {command} {arguments}");
+#if NETSTANDARD2_0
+        psi.Arguments = string.Join(" ", Array.ConvertAll(args, QuoteArgument));
+#else
+        foreach (var arg in args)
+        {
+            psi.ArgumentList.Add(arg);
+        }
+#endif
+
+        var argsDisplay = string.Join(" ", args);
+        log($"Running: go {argsDisplay}");
 
         using var process = Process.Start(psi) ?? throw new InvalidOperationException("Failed to start go process");
 
-        var stdout = await process.StandardOutput.ReadToEndAsync();
-        var stderr = await process.StandardError.ReadToEndAsync();
+        // Read stdout and stderr concurrently to avoid deadlocks
+        // when the process writes enough to fill an OS pipe buffer
+#if NETSTANDARD2_0 || NETSTANDARD2_1
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+#else
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+#endif
 
+        var stdout = await stdoutTask;
+        var stderr = await stderrTask;
+
+#if NETSTANDARD2_0 || NETSTANDARD2_1
         process.WaitForExit();
+#else
+        await process.WaitForExitAsync(cancellationToken);
+#endif
 
         if (!string.IsNullOrWhiteSpace(stdout))
         {
@@ -278,7 +314,19 @@ public class GoProcess : IAsyncDisposable, IDisposable
 
         if (process.ExitCode != 0)
         {
-            throw new GoCompilationException($"'go {command} {arguments}' failed with exit code {process.ExitCode}:\n{stderr}");
+            throw new GoCompilationException($"'go {argsDisplay}' failed with exit code {process.ExitCode}:\n{stderr}");
         }
     }
+
+#if NETSTANDARD2_0
+    private static string QuoteArgument(string arg)
+    {
+        if (arg.Length > 0 && arg.IndexOfAny(new[] { ' ', '"', '\\' }) < 0)
+        {
+            return arg;
+        }
+
+        return "\"" + arg.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+    }
+#endif
 }

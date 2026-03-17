@@ -157,7 +157,7 @@ public class GoProcessTest
                 fmt.Println(id)
             }
             """,
-            goModules: ["github.com/nats-io/nuid@latest"]);
+            goModules: ["github.com/nats-io/nuid@v1.0.1"]);
 
         var id = await go.ReadLineAsync();
         Assert.NotNull(id);
