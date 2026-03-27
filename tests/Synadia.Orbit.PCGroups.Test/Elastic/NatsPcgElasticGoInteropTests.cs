@@ -209,6 +209,7 @@ public class NatsPcgElasticGoInteropTests
     public async Task DotNet_creates_Go_consumes()
     {
         await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await SkipBelow211Async(nats);
         var js = nats.CreateJetStreamContext();
 
         var id = Guid.NewGuid().ToString("N");
@@ -273,6 +274,7 @@ public class NatsPcgElasticGoInteropTests
     public async Task Go_creates_DotNet_consumes()
     {
         await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await SkipBelow211Async(nats);
         var js = nats.CreateJetStreamContext();
 
         var id = Guid.NewGuid().ToString("N");
@@ -401,6 +403,14 @@ public class NatsPcgElasticGoInteropTests
         {
             await js.DeleteStreamAsync(streamName);
         }
+    }
+
+    private static async Task SkipBelow211Async(NatsConnection nats)
+    {
+        await nats.ConnectRetryAsync();
+        Assert.SkipUnless(
+            nats.HasMinServerVersion(2, 11),
+            $"Server version {nats.ServerInfo?.Version} does not support priority groups (requires 2.11+)");
     }
 
     private static async Task SkipBelow212Async(NatsConnection nats)
