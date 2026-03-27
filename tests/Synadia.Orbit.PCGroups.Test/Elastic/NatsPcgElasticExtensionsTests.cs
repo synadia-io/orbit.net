@@ -24,35 +24,36 @@ public class NatsPcgElasticExtensionsTests
         var js = nats.CreateJetStreamContext();
 
         // Create a stream
-        var streamName = $"test-stream-{Guid.NewGuid():N}";
+        var id = Guid.NewGuid().ToString("N");
+        var streamName = $"test-stream-{id}";
         await js.CreateStreamAsync(new StreamConfig
         {
             Name = streamName,
-            Subjects = new[] { "orders.>" },
+            Subjects = new[] { $"cgc{id}.>" },
         });
 
         try
         {
             // Create an elastic consumer group
-            var groupName = $"test-group-{Guid.NewGuid():N}";
+            var groupName = $"test-group-{id}";
             var config = await js.CreatePcgElasticAsync(
                 streamName,
                 groupName,
                 maxNumMembers: 3,
-                filter: "orders.*",
-                partitioningWildcards: [1]);
+                partitioningFilters: [new NatsPcgPartitioningFilter($"cgc{id}.*", [1])]);
 
             Assert.Equal(3u, config.MaxMembers);
-            Assert.Equal("orders.*", config.Filter);
-            Assert.Equal([1], config.PartitioningWildcards);
+            Assert.Single(config.PartitioningFilters);
+            Assert.Equal($"cgc{id}.*", config.PartitioningFilters[0].Filter);
+            Assert.Equal([1], config.PartitioningFilters[0].PartitioningWildcards);
             Assert.Null(config.Members);
             Assert.Null(config.MemberMappings);
 
             // Get the config back
             var retrieved = await js.GetPcgElasticConfigAsync(streamName, groupName);
             Assert.Equal(config.MaxMembers, retrieved.MaxMembers);
-            Assert.Equal(config.Filter, retrieved.Filter);
-            Assert.Equal(config.PartitioningWildcards, retrieved.PartitioningWildcards);
+            Assert.Equal(config.PartitioningFilters[0].Filter, retrieved.PartitioningFilters[0].Filter);
+            Assert.Equal(config.PartitioningFilters[0].PartitioningWildcards, retrieved.PartitioningFilters[0].PartitioningWildcards);
 
             // Clean up
             await js.DeletePcgElasticAsync(streamName, groupName);
@@ -69,22 +70,22 @@ public class NatsPcgElasticExtensionsTests
         await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
         var js = nats.CreateJetStreamContext();
 
-        var streamName = $"test-stream-{Guid.NewGuid():N}";
+        var id = Guid.NewGuid().ToString("N");
+        var streamName = $"test-stream-{id}";
         await js.CreateStreamAsync(new StreamConfig
         {
             Name = streamName,
-            Subjects = new[] { "orders.>" },
+            Subjects = new[] { $"arm{id}.>" },
         });
 
         try
         {
-            var groupName = $"test-group-{Guid.NewGuid():N}";
+            var groupName = $"test-group-{id}";
             await js.CreatePcgElasticAsync(
                 streamName,
                 groupName,
                 maxNumMembers: 3,
-                filter: "orders.*",
-                partitioningWildcards: [1]);
+                partitioningFilters: [new NatsPcgPartitioningFilter($"arm{id}.*", [1])]);
 
             // Add members
             var members = await js.AddPcgElasticMembersAsync(streamName, groupName, ["member1", "member2"]);
@@ -120,22 +121,22 @@ public class NatsPcgElasticExtensionsTests
         await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
         var js = nats.CreateJetStreamContext();
 
-        var streamName = $"test-stream-{Guid.NewGuid():N}";
+        var id = Guid.NewGuid().ToString("N");
+        var streamName = $"test-stream-{id}";
         await js.CreateStreamAsync(new StreamConfig
         {
             Name = streamName,
-            Subjects = new[] { "orders.>" },
+            Subjects = new[] { $"smm{id}.>" },
         });
 
         try
         {
-            var groupName = $"test-group-{Guid.NewGuid():N}";
+            var groupName = $"test-group-{id}";
             await js.CreatePcgElasticAsync(
                 streamName,
                 groupName,
                 maxNumMembers: 4,
-                filter: "orders.*",
-                partitioningWildcards: [1]);
+                partitioningFilters: [new NatsPcgPartitioningFilter($"smm{id}.*", [1])]);
 
             // Set explicit mappings
             var mappings = new[]
@@ -172,20 +173,21 @@ public class NatsPcgElasticExtensionsTests
         await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
         var js = nats.CreateJetStreamContext();
 
-        var streamName = $"test-stream-{Guid.NewGuid():N}";
+        var id = Guid.NewGuid().ToString("N");
+        var streamName = $"test-stream-{id}";
         await js.CreateStreamAsync(new StreamConfig
         {
             Name = streamName,
-            Subjects = new[] { "orders.>" },
+            Subjects = new[] { $"lcg{id}.>" },
         });
 
         try
         {
-            var groupName1 = $"group1-{Guid.NewGuid():N}";
-            var groupName2 = $"group2-{Guid.NewGuid():N}";
+            var groupName1 = $"group1-{id}";
+            var groupName2 = $"group2-{id}";
 
-            await js.CreatePcgElasticAsync(streamName, groupName1, 3, "orders.*", [1]);
-            await js.CreatePcgElasticAsync(streamName, groupName2, 3, "orders.*", [1]);
+            await js.CreatePcgElasticAsync(streamName, groupName1, 3, [new NatsPcgPartitioningFilter($"lcg{id}.*", [1])]);
+            await js.CreatePcgElasticAsync(streamName, groupName2, 3, [new NatsPcgPartitioningFilter($"lcg{id}.*", [1])]);
 
             var groups = new List<string>();
             await foreach (var group in js.ListPcgElasticAsync(streamName))
@@ -211,17 +213,18 @@ public class NatsPcgElasticExtensionsTests
         await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
         var js = nats.CreateJetStreamContext();
 
-        var streamName = $"test-stream-{Guid.NewGuid():N}";
+        var id = Guid.NewGuid().ToString("N");
+        var streamName = $"test-stream-{id}";
         await js.CreateStreamAsync(new StreamConfig
         {
             Name = streamName,
-            Subjects = new[] { "orders.>" },
+            Subjects = new[] { $"gpf{id}.>" },
         });
 
         try
         {
-            var groupName = $"test-group-{Guid.NewGuid():N}";
-            await js.CreatePcgElasticAsync(streamName, groupName, 4, "orders.*", [1]);
+            var groupName = $"test-group-{id}";
+            await js.CreatePcgElasticAsync(streamName, groupName, 4, [new NatsPcgPartitioningFilter($"gpf{id}.*", [1])]);
 
             // Add members
             await js.AddPcgElasticMembersAsync(streamName, groupName, ["a", "b"]);
@@ -235,8 +238,8 @@ public class NatsPcgElasticExtensionsTests
             var filtersA = config.GetPcgElasticPartitionFilters("a");
             var filtersB = config.GetPcgElasticPartitionFilters("b");
 
-            Assert.Equal(new[] { "0.>", "1.>" }, filtersA);
-            Assert.Equal(new[] { "2.>", "3.>" }, filtersB);
+            Assert.Equal(new[] { $"0.gpf{id}.*", $"1.gpf{id}.*" }, filtersA);
+            Assert.Equal(new[] { $"2.gpf{id}.*", $"3.gpf{id}.*" }, filtersB);
 
             await js.DeletePcgElasticAsync(streamName, groupName);
         }
@@ -257,27 +260,54 @@ public class NatsPcgElasticExtensionsTests
                 "stream",
                 "group",
                 maxNumMembers: 3,
-                filter: string.Empty,
-                partitioningWildcards: [1]));
+                partitioningFilters: [new NatsPcgPartitioningFilter(string.Empty, [1])]));
 
         Assert.Contains("required", exception.Message);
     }
 
     [Fact]
-    public async Task Validation_PartitioningWildcardsRequired()
+    public async Task CreatePcgElastic_EmptyPartitioningFilters_DefaultsToAllSubjects()
     {
         await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await SkipBelow212Async(nats);
         var js = nats.CreateJetStreamContext();
 
-        var exception = await Assert.ThrowsAsync<NatsPcgConfigurationException>(() =>
-            js.CreatePcgElasticAsync(
-                "stream",
-                "group",
-                maxNumMembers: 3,
-                filter: "orders.*",
-                partitioningWildcards: Array.Empty<int>()));
+        var id = Guid.NewGuid().ToString("N");
+        var streamName = $"test-stream-{id}";
+        await js.CreateStreamAsync(new StreamConfig
+        {
+            Name = streamName,
+            Subjects = [$"epf{id}.>"],
+        });
 
-        Assert.Contains("at least one element", exception.Message);
+        try
+        {
+            var consumerGroupName = $"cg-{id}";
+            var config = await js.CreatePcgElasticAsync(
+                streamName,
+                consumerGroupName,
+                maxNumMembers: 3,
+                partitioningFilters: Array.Empty<NatsPcgPartitioningFilter>());
+
+            Assert.Equal(3U, config.MaxMembers);
+            Assert.Empty(config.PartitioningFilters);
+
+            // Verify the work-queue stream was created with ">" as the default source transform
+            var wqStreamName = $"{streamName}-{consumerGroupName}";
+            var streamInfo = await js.GetStreamAsync(wqStreamName);
+            Assert.NotNull(streamInfo);
+            var sources = streamInfo.Info.Config.Sources;
+            Assert.NotNull(sources);
+            Assert.Single(sources);
+            Assert.Single(sources.First().SubjectTransforms!);
+            Assert.Equal(">", sources.First().SubjectTransforms!.First().Src);
+
+            await js.DeletePcgElasticAsync(streamName, consumerGroupName);
+        }
+        finally
+        {
+            await js.DeleteStreamAsync(streamName);
+        }
     }
 
     [Fact]
@@ -286,17 +316,18 @@ public class NatsPcgElasticExtensionsTests
         await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
         var js = nats.CreateJetStreamContext();
 
-        var streamName = $"test-stream-{Guid.NewGuid():N}";
+        var id = Guid.NewGuid().ToString("N");
+        var streamName = $"test-stream-{id}";
         await js.CreateStreamAsync(new StreamConfig
         {
             Name = streamName,
-            Subjects = new[] { "orders.>" },
+            Subjects = new[] { $"vcm{id}.>" },
         });
 
         try
         {
-            var groupName = $"test-group-{Guid.NewGuid():N}";
-            await js.CreatePcgElasticAsync(streamName, groupName, 3, "orders.*", [1]);
+            var groupName = $"test-group-{id}";
+            await js.CreatePcgElasticAsync(streamName, groupName, 3, [new NatsPcgPartitioningFilter($"vcm{id}.*", [1])]);
 
             // Set mappings
             await js.SetPcgElasticMemberMappingsAsync(streamName, groupName, [
@@ -323,26 +354,26 @@ public class NatsPcgElasticExtensionsTests
         await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
         var js = nats.CreateJetStreamContext();
 
-        var streamName = $"test-stream-{Guid.NewGuid():N}";
+        var id = Guid.NewGuid().ToString("N");
+        var streamName = $"test-stream-{id}";
 
         // Create source stream (elastic creates work-queue stream with transforms)
         await js.CreateStreamAsync(new StreamConfig
         {
             Name = streamName,
-            Subjects = ["events.*"],
+            Subjects = [$"ram{id}.*"],
         });
 
         try
         {
-            var groupName = $"test-group-{Guid.NewGuid():N}";
+            var groupName = $"test-group-{id}";
 
             // Create elastic consumer group
             await js.CreatePcgElasticAsync(
                 streamName,
                 groupName,
                 maxNumMembers: 10,
-                filter: "events.*",
-                partitioningWildcards: [1]);
+                partitioningFilters: [new NatsPcgPartitioningFilter($"ram{id}.*", [1])]);
 
             // Add members
             await js.AddPcgElasticMembersAsync(streamName, groupName, ["w1", "w2", "w3"]);
@@ -351,7 +382,7 @@ public class NatsPcgElasticExtensionsTests
             const int messageCount = 10;
             for (int i = 0; i < messageCount; i++)
             {
-                await js.PublishAsync($"events.user{i}", $"payload-{i}");
+                await js.PublishAsync($"ram{id}.user{i}", $"payload-{i}");
             }
 
             // Consume with all members concurrently using a channel
@@ -404,40 +435,40 @@ public class NatsPcgElasticExtensionsTests
         await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
         var js = nats.CreateJetStreamContext();
 
-        var streamName = $"test-stream-{Guid.NewGuid():N}";
+        var id = Guid.NewGuid().ToString("N");
+        var streamName = $"test-stream-{id}";
 
         // Create source stream
         await js.CreateStreamAsync(new StreamConfig
         {
             Name = streamName,
-            Subjects = ["test.*"],
+            Subjects = [$"spp{id}.*"],
         });
 
         try
         {
-            var groupName = $"test-group-{Guid.NewGuid():N}";
+            var groupName = $"test-group-{id}";
 
             // Create elastic consumer group
             await js.CreatePcgElasticAsync(
                 streamName,
                 groupName,
                 maxNumMembers: 10,
-                filter: "test.*",
-                partitioningWildcards: [1]);
+                partitioningFilters: [new NatsPcgPartitioningFilter($"spp{id}.*", [1])]);
 
             // Add single member (gets all partitions)
             await js.AddPcgElasticMembersAsync(streamName, groupName, ["worker"]);
 
             // Publish a message
-            await js.PublishAsync("test.mykey", "payload");
+            await js.PublishAsync($"spp{id}.mykey", "payload");
 
             // Consume and verify subject is stripped
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
             await foreach (var msg in js.ConsumePcgElasticAsync<string>(streamName, groupName, "worker", cancellationToken: cts.Token))
             {
-                // Subject should be "test.mykey", not "{partition}.test.mykey"
-                Assert.Equal("test.mykey", msg.Subject);
+                // Subject should be "spp{id}.mykey", not "{partition}.spp{id}.mykey"
+                Assert.Equal($"spp{id}.mykey", msg.Subject);
                 await msg.AckAsync();
                 break;
             }
@@ -456,33 +487,33 @@ public class NatsPcgElasticExtensionsTests
         await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
         var js = nats.CreateJetStreamContext();
 
-        var streamName = $"test-stream-{Guid.NewGuid():N}";
+        var id = Guid.NewGuid().ToString("N");
+        var streamName = $"test-stream-{id}";
 
         await js.CreateStreamAsync(new StreamConfig
         {
             Name = streamName,
-            Subjects = ["events.*"],
+            Subjects = [$"emc{id}.*"],
         });
 
         try
         {
-            var groupName = $"test-group-{Guid.NewGuid():N}";
+            var groupName = $"test-group-{id}";
 
             await js.CreatePcgElasticAsync(
                 streamName,
                 groupName,
                 maxNumMembers: 4,
-                filter: "events.*",
-                partitioningWildcards: [1]);
+                partitioningFilters: [new NatsPcgPartitioningFilter($"emc{id}.*", [1])]);
 
             // Add two members
             await js.AddPcgElasticMembersAsync(streamName, groupName, ["memberA", "memberB"]);
 
             // Publish messages that will go to different partitions
-            await js.PublishAsync("events.key1", "payload1");
-            await js.PublishAsync("events.key2", "payload2");
-            await js.PublishAsync("events.key3", "payload3");
-            await js.PublishAsync("events.key4", "payload4");
+            await js.PublishAsync($"emc{id}.key1", "payload1");
+            await js.PublishAsync($"emc{id}.key2", "payload2");
+            await js.PublishAsync($"emc{id}.key3", "payload3");
+            await js.PublishAsync($"emc{id}.key4", "payload4");
 
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             var memberAMessages = new List<string>();
@@ -542,5 +573,379 @@ public class NatsPcgElasticExtensionsTests
         {
             await js.DeleteStreamAsync(streamName);
         }
+    }
+
+    [Fact]
+    public async Task CreatePcgElastic_MultipleFilters_Success()
+    {
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
+        var js = nats.CreateJetStreamContext();
+
+        var id = Guid.NewGuid().ToString("N");
+        var streamName = $"test-stream-{id}";
+
+        await js.CreateStreamAsync(new StreamConfig
+        {
+            Name = streamName,
+            Subjects = [$"ord{id}.*", $"ref{id}.*"],
+        });
+
+        try
+        {
+            var groupName = $"test-group-{id}";
+
+            var config = await js.CreatePcgElasticAsync(
+                streamName,
+                groupName,
+                maxNumMembers: 3,
+                partitioningFilters:
+                [
+                    new NatsPcgPartitioningFilter($"ord{id}.*", [1]),
+                    new NatsPcgPartitioningFilter($"ref{id}.*", [1]),
+                ]);
+
+            Assert.Equal(3u, config.MaxMembers);
+            Assert.Equal(2, config.PartitioningFilters.Length);
+            Assert.Equal($"ord{id}.*", config.PartitioningFilters[0].Filter);
+            Assert.Equal($"ref{id}.*", config.PartitioningFilters[1].Filter);
+
+            // Verify config round-trip
+            var retrieved = await js.GetPcgElasticConfigAsync(streamName, groupName);
+            Assert.Equal(2, retrieved.PartitioningFilters.Length);
+            Assert.Equal($"ord{id}.*", retrieved.PartitioningFilters[0].Filter);
+            Assert.Equal($"ref{id}.*", retrieved.PartitioningFilters[1].Filter);
+
+            await js.DeletePcgElasticAsync(streamName, groupName);
+        }
+        finally
+        {
+            await js.DeleteStreamAsync(streamName);
+        }
+    }
+
+    [Fact]
+    public async Task ConsumeElastic_MultipleFilters_ReceivesFromAllFilters()
+    {
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
+        var js = nats.CreateJetStreamContext();
+
+        var id = Guid.NewGuid().ToString("N");
+        var streamName = $"test-stream-{id}";
+
+        await js.CreateStreamAsync(new StreamConfig
+        {
+            Name = streamName,
+            Subjects = [$"ord{id}.*", $"ref{id}.*"],
+        });
+
+        try
+        {
+            var groupName = $"test-group-{id}";
+
+            await js.CreatePcgElasticAsync(
+                streamName,
+                groupName,
+                maxNumMembers: 3,
+                partitioningFilters:
+                [
+                    new NatsPcgPartitioningFilter($"ord{id}.*", [1]),
+                    new NatsPcgPartitioningFilter($"ref{id}.*", [1]),
+                ]);
+
+            // Add a member
+            await js.AddPcgElasticMembersAsync(streamName, groupName, ["worker"]);
+
+            // Publish messages to both subject patterns
+            await js.PublishAsync($"ord{id}.item1", "order1");
+            await js.PublishAsync($"ref{id}.item2", "refund1");
+            await js.PublishAsync($"ord{id}.item3", "order2");
+            await js.PublishAsync($"ref{id}.item4", "refund2");
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var receivedSubjects = new List<string>();
+
+            await foreach (var msg in js.ConsumePcgElasticAsync<string>(streamName, groupName, "worker", cancellationToken: cts.Token))
+            {
+                receivedSubjects.Add(msg.Subject);
+                await msg.AckAsync(cancellationToken: cts.Token);
+                if (receivedSubjects.Count >= 4)
+                {
+                    break;
+                }
+            }
+
+            Assert.Equal(4, receivedSubjects.Count);
+            Assert.Contains(receivedSubjects, s => s.StartsWith($"ord{id}."));
+            Assert.Contains(receivedSubjects, s => s.StartsWith($"ref{id}."));
+
+            await js.DeletePcgElasticAsync(streamName, groupName, cancellationToken: cts.Token);
+        }
+        finally
+        {
+            await js.DeleteStreamAsync(streamName);
+        }
+    }
+
+    [Fact]
+    public async Task CreatePcgElastic_EmptyWildcards_FullSubjectPartition_Success()
+    {
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await SkipBelow212Async(nats);
+        var js = nats.CreateJetStreamContext();
+
+        var id = Guid.NewGuid().ToString("N");
+        var streamName = $"test-stream-{id}";
+
+        await js.CreateStreamAsync(new StreamConfig
+        {
+            Name = streamName,
+            Subjects = [$"ewf{id}.*"],
+        });
+
+        try
+        {
+            var groupName = $"test-group-{id}";
+
+            var config = await js.CreatePcgElasticAsync(
+                streamName,
+                groupName,
+                maxNumMembers: 3,
+                partitioningFilters: [new NatsPcgPartitioningFilter($"ewf{id}.*", Array.Empty<int>())]);
+
+            Assert.Equal(3u, config.MaxMembers);
+            Assert.Single(config.PartitioningFilters);
+            Assert.Empty(config.PartitioningFilters[0].PartitioningWildcards);
+
+            // Verify config round-trip
+            var retrieved = await js.GetPcgElasticConfigAsync(streamName, groupName);
+            Assert.Empty(retrieved.PartitioningFilters[0].PartitioningWildcards);
+
+            await js.DeletePcgElasticAsync(streamName, groupName);
+        }
+        finally
+        {
+            await js.DeleteStreamAsync(streamName);
+        }
+    }
+
+    [Fact]
+    public async Task ConsumeElastic_EmptyWildcards_ReceivesAllMessages()
+    {
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await SkipBelow212Async(nats);
+        var js = nats.CreateJetStreamContext();
+
+        var id = Guid.NewGuid().ToString("N");
+        var streamName = $"test-stream-{id}";
+
+        await js.CreateStreamAsync(new StreamConfig
+        {
+            Name = streamName,
+            Subjects = [$"ewr{id}.*"],
+        });
+
+        try
+        {
+            var groupName = $"test-group-{id}";
+
+            await js.CreatePcgElasticAsync(
+                streamName,
+                groupName,
+                maxNumMembers: 3,
+                partitioningFilters: [new NatsPcgPartitioningFilter($"ewr{id}.*", Array.Empty<int>())]);
+
+            // Single member gets all partitions
+            await js.AddPcgElasticMembersAsync(streamName, groupName, ["worker"]);
+
+            // Publish messages
+            await js.PublishAsync($"ewr{id}.key1", "payload1");
+            await js.PublishAsync($"ewr{id}.key2", "payload2");
+            await js.PublishAsync($"ewr{id}.key3", "payload3");
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var receivedSubjects = new List<string>();
+
+            await foreach (var msg in js.ConsumePcgElasticAsync<string>(streamName, groupName, "worker", cancellationToken: cts.Token))
+            {
+                receivedSubjects.Add(msg.Subject);
+                await msg.AckAsync();
+                if (receivedSubjects.Count >= 3)
+                {
+                    break;
+                }
+            }
+
+            Assert.Equal(3, receivedSubjects.Count);
+            Assert.Contains($"ewr{id}.key1", receivedSubjects);
+            Assert.Contains($"ewr{id}.key2", receivedSubjects);
+            Assert.Contains($"ewr{id}.key3", receivedSubjects);
+
+            await js.DeletePcgElasticAsync(streamName, groupName);
+        }
+        finally
+        {
+            await js.DeleteStreamAsync(streamName);
+        }
+    }
+
+    [Fact]
+    public async Task ConsumeElastic_EmptyWildcards_PartitionsAcrossMembers()
+    {
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await SkipBelow212Async(nats);
+        var js = nats.CreateJetStreamContext();
+
+        var id = Guid.NewGuid().ToString("N");
+        var streamName = $"test-stream-{id}";
+
+        await js.CreateStreamAsync(new StreamConfig
+        {
+            Name = streamName,
+            Subjects = [$"ewp{id}.*"],
+        });
+
+        try
+        {
+            var groupName = $"test-group-{id}";
+
+            // 4 partitions, empty wildcards means partition by full subject hash
+            await js.CreatePcgElasticAsync(
+                streamName,
+                groupName,
+                maxNumMembers: 4,
+                partitioningFilters: [new NatsPcgPartitioningFilter($"ewp{id}.*", Array.Empty<int>())]);
+
+            await js.AddPcgElasticMembersAsync(streamName, groupName, ["memberA", "memberB"]);
+
+            // Publish enough messages to different subjects so partitions get spread
+            for (int i = 0; i < 20; i++)
+            {
+                await js.PublishAsync($"ewp{id}.item{i}", $"payload{i}");
+            }
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            var memberAMessages = new List<string>();
+            var memberBMessages = new List<string>();
+
+            var taskA = Task.Run(async () =>
+            {
+                try
+                {
+                    await foreach (var msg in js.ConsumePcgElasticAsync<string>(streamName, groupName, "memberA", cancellationToken: cts.Token))
+                    {
+                        memberAMessages.Add(msg.Subject);
+                        await msg.AckAsync();
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            });
+
+            var taskB = Task.Run(async () =>
+            {
+                try
+                {
+                    await foreach (var msg in js.ConsumePcgElasticAsync<string>(streamName, groupName, "memberB", cancellationToken: cts.Token))
+                    {
+                        memberBMessages.Add(msg.Subject);
+                        await msg.AckAsync();
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            });
+
+            // Wait for all 20 messages
+            while (memberAMessages.Count + memberBMessages.Count < 20 && !cts.Token.IsCancellationRequested)
+            {
+                await Task.Delay(100, cts.Token);
+            }
+
+            cts.Cancel();
+            await Task.WhenAll(taskA, taskB);
+
+            // Both members should have received messages (full-subject hash distributes across partitions)
+            Assert.True(memberAMessages.Count > 0, "memberA should receive messages");
+            Assert.True(memberBMessages.Count > 0, "memberB should receive messages");
+            Assert.Equal(20, memberAMessages.Count + memberBMessages.Count);
+
+            // No overlap - each message goes to exactly one member
+            var allMessages = memberAMessages.Concat(memberBMessages).ToList();
+            Assert.Equal(allMessages.Count, allMessages.Distinct().Count());
+
+            // Verify determinism: publish the same subjects again and check same member gets them
+            // (This proves server is hashing the full subject, not round-robining)
+            for (int i = 0; i < 20; i++)
+            {
+                await js.PublishAsync($"ewp{id}.item{i}", $"payload{i}-round2");
+            }
+
+            var memberARound2 = new List<string>();
+            var memberBRound2 = new List<string>();
+
+            using var cts2 = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+            var taskA2 = Task.Run(async () =>
+            {
+                try
+                {
+                    await foreach (var msg in js.ConsumePcgElasticAsync<string>(streamName, groupName, "memberA", cancellationToken: cts2.Token))
+                    {
+                        memberARound2.Add(msg.Subject);
+                        await msg.AckAsync();
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            });
+
+            var taskB2 = Task.Run(async () =>
+            {
+                try
+                {
+                    await foreach (var msg in js.ConsumePcgElasticAsync<string>(streamName, groupName, "memberB", cancellationToken: cts2.Token))
+                    {
+                        memberBRound2.Add(msg.Subject);
+                        await msg.AckAsync();
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            });
+
+            while (memberARound2.Count + memberBRound2.Count < 20 && !cts2.Token.IsCancellationRequested)
+            {
+                await Task.Delay(100, cts2.Token);
+            }
+
+            cts2.Cancel();
+            await Task.WhenAll(taskA2, taskB2);
+
+            Assert.Equal(20, memberARound2.Count + memberBRound2.Count);
+
+            // Same subjects should land on the same member both rounds
+            memberAMessages.Sort(StringComparer.Ordinal);
+            memberARound2.Sort(StringComparer.Ordinal);
+            memberBMessages.Sort(StringComparer.Ordinal);
+            memberBRound2.Sort(StringComparer.Ordinal);
+            Assert.Equal(memberAMessages, memberARound2);
+            Assert.Equal(memberBMessages, memberBRound2);
+
+            await js.DeletePcgElasticAsync(streamName, groupName);
+        }
+        finally
+        {
+            await js.DeleteStreamAsync(streamName);
+        }
+    }
+
+    private static async Task SkipBelow212Async(NatsConnection nats)
+    {
+        await nats.ConnectRetryAsync();
+        Assert.SkipUnless(nats.HasMinServerVersion(2, 12), $"Server version {nats.ServerInfo?.Version} does not support empty-wildcards full-subject partitioning (requires 2.12+)");
     }
 }

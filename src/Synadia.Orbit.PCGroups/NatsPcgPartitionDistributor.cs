@@ -15,12 +15,14 @@ public static class NatsPcgPartitionDistributor
     /// <param name="maxMembers">Maximum number of members (equals number of partitions).</param>
     /// <param name="memberMappings">Optional explicit member-to-partition mappings.</param>
     /// <param name="memberName">The member name to generate filters for.</param>
-    /// <returns>Array of filters like ["0.>", "3.>", "6.>"].</returns>
+    /// <param name="filter">The subject filter to embed in partition filters.</param>
+    /// <returns>Array of filters like ["0.orders.*", "3.orders.*"].</returns>
     public static string[] GeneratePartitionFilters(
         string[]? members,
         uint maxMembers,
         NatsPcgMemberMapping[]? memberMappings,
-        string memberName)
+        string memberName,
+        string filter)
     {
         int[] partitions;
 
@@ -54,7 +56,7 @@ public static class NatsPcgPartitionDistributor
         string[] filters = new string[partitions.Length];
         for (int i = 0; i < partitions.Length; i++)
         {
-            filters[i] = $"{partitions[i]}.>";
+            filters[i] = $"{partitions[i]}.{filter}";
         }
 
         return filters;

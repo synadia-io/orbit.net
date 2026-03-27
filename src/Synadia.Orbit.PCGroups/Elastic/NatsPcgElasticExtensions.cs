@@ -25,8 +25,7 @@ public static class NatsPcgElasticExtensions
     /// <param name="streamName">Name of the source stream.</param>
     /// <param name="consumerGroupName">Name of the consumer group.</param>
     /// <param name="maxNumMembers">Maximum number of members (also the number of partitions).</param>
-    /// <param name="filter">Subject filter for the consumer group.</param>
-    /// <param name="partitioningWildcards">Wildcard positions for partitioning (1-indexed).</param>
+    /// <param name="partitioningFilters">Partitioning filters, each pairing a subject filter with wildcard positions.</param>
     /// <param name="maxBufferedMessages">Optional maximum number of buffered messages.</param>
     /// <param name="maxBufferedBytes">Optional maximum bytes of buffered messages.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -36,19 +35,17 @@ public static class NatsPcgElasticExtensions
         string streamName,
         string consumerGroupName,
         uint maxNumMembers,
-        string filter,
-        int[] partitioningWildcards,
+        NatsPcgPartitioningFilter[] partitioningFilters,
         long? maxBufferedMessages = null,
         long? maxBufferedBytes = null,
         CancellationToken cancellationToken = default)
     {
-        ValidateConfig(maxNumMembers, filter, partitioningWildcards);
+        ValidateConfig(maxNumMembers, partitioningFilters);
 
         var config = new NatsPcgElasticConfig
         {
             MaxMembers = maxNumMembers,
-            Filter = filter,
-            PartitioningWildcards = partitioningWildcards,
+            PartitioningFilters = partitioningFilters,
             MaxBufferedMsgs = maxBufferedMessages,
             MaxBufferedBytes = maxBufferedBytes,
         };
@@ -461,11 +458,30 @@ public static class NatsPcgElasticExtensions
     /// <returns>Array of partition filters.</returns>
     public static string[] GetPcgElasticPartitionFilters(this NatsPcgElasticConfig config, string memberName)
     {
-        return NatsPcgPartitionDistributor.GeneratePartitionFilters(
-            config.Members,
-            config.MaxMembers,
-            config.MemberMappings,
-            memberName);
+        var filters = new List<string>();
+        if (config.PartitioningFilters.Length > 0)
+        {
+            foreach (var pf in config.PartitioningFilters)
+            {
+                filters.AddRange(NatsPcgPartitionDistributor.GeneratePartitionFilters(
+                    config.Members,
+                    config.MaxMembers,
+                    config.MemberMappings,
+                    memberName,
+                    pf.Filter));
+            }
+        }
+        else
+        {
+            filters.AddRange(NatsPcgPartitionDistributor.GeneratePartitionFilters(
+                config.Members,
+                config.MaxMembers,
+                config.MemberMappings,
+                memberName,
+                ">"));
+        }
+
+        return filters.ToArray();
     }
 
     /// <summary>
@@ -491,7 +507,7 @@ public static class NatsPcgElasticExtensions
     }
 
     // ReSharper disable ParameterOnlyUsedForPreconditionCheck.Local
-    private static void ValidateConfig(uint maxNumMembers, string filter, int[] partitioningWildcards)
+    private static void ValidateConfig(uint maxNumMembers, NatsPcgPartitioningFilter[] partitioningFilters)
     {
         // ReSharper restore ParameterOnlyUsedForPreconditionCheck.Local
         if (maxNumMembers == 0)
@@ -499,7 +515,7 @@ public static class NatsPcgElasticExtensions
             throw new NatsPcgConfigurationException("maxNumMembers must be greater than 0");
         }
 
-        NatsPcgMemberMappingValidator.ValidateFilterAndWildcards(filter, partitioningWildcards);
+        NatsPcgMemberMappingValidator.ValidatePartitioningFilters(partitioningFilters);
     }
 
     private static async Task CreateWorkQueueStreamAsync(
@@ -511,37 +527,26 @@ public static class NatsPcgElasticExtensions
     {
         string workQueueStreamName = GetWorkQueueStreamName(streamName, consumerGroupName);
 
-        // Build subject transform: add partition prefix based on wildcards
-        // Transform syntax: {{Partition(numPartitions, wildcardIndexes...)}}
-        // Replace * wildcards with {{wildcard(N)}} in the filter
-        string wildcardStr = string.Join(",", config.PartitioningWildcards);
-        var filterTokens = config.Filter.Split('.');
-        int wildcardIndex = 1;
-        for (int i = 0; i < filterTokens.Length; i++)
+        var subjectTransforms = new List<SubjectTransform>();
+        if (config.PartitioningFilters.Length > 0)
         {
-            if (filterTokens[i] == "*")
+            foreach (var pf in config.PartitioningFilters)
             {
-                filterTokens[i] = $"{{{{wildcard({wildcardIndex})}}}}";
-                wildcardIndex++;
+                subjectTransforms.Add(BuildSubjectTransform(pf, config.MaxMembers));
             }
         }
-
-        string destFromFilter = string.Join(".", filterTokens);
-        string subjectTransform = $"{{{{Partition({config.MaxMembers},{wildcardStr})}}}}.{destFromFilter}";
+        else
+        {
+            var defaultFilter = new NatsPcgPartitioningFilter(">", Array.Empty<int>());
+            subjectTransforms.Add(BuildSubjectTransform(defaultFilter, config.MaxMembers));
+        }
 
         var sources = new List<StreamSource>
         {
             new()
             {
                 Name = streamName,
-                SubjectTransforms = new List<SubjectTransform>
-                {
-                    new()
-                    {
-                        Src = config.Filter,
-                        Dest = subjectTransform,
-                    },
-                },
+                SubjectTransforms = subjectTransforms,
             },
         };
 
@@ -563,6 +568,46 @@ public static class NatsPcgElasticExtensions
         }
 
         await js.CreateStreamAsync(streamConfig, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static SubjectTransform BuildSubjectTransform(NatsPcgPartitioningFilter pf, uint maxMembers)
+    {
+        bool isFullSubject = NatsPcgMemberMappingValidator.IsPartitionByFullSubject(pf.PartitioningWildcards);
+
+        // Build subject transform: add partition prefix based on wildcards
+        // Replace * wildcards with {{wildcard(N)}} in the filter
+        var filterTokens = pf.Filter.Split('.');
+        int wildcardIndex = 1;
+        for (int i = 0; i < filterTokens.Length; i++)
+        {
+            if (filterTokens[i] == "*")
+            {
+                filterTokens[i] = $"{{{{wildcard({wildcardIndex})}}}}";
+                wildcardIndex++;
+            }
+        }
+
+        string destFromFilter = string.Join(".", filterTokens);
+
+        string partitionFunction;
+        if (isFullSubject)
+        {
+            // {{Partition(N)}} without wildcard positions hashes the entire subject
+            partitionFunction = $"{{{{Partition({maxMembers})}}}}";
+        }
+        else
+        {
+            string wildcardStr = string.Join(",", pf.PartitioningWildcards);
+            partitionFunction = $"{{{{Partition({maxMembers},{wildcardStr})}}}}";
+        }
+
+        string subjectTransform = $"{partitionFunction}.{destFromFilter}";
+
+        return new SubjectTransform
+        {
+            Src = pf.Filter,
+            Dest = subjectTransform,
+        };
     }
 
     private static async Task<string[]> UpdateMembersAsync(

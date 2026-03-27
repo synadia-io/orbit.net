@@ -17,16 +17,10 @@ public sealed record NatsPcgElasticConfig
     public required uint MaxMembers { get; init; }
 
     /// <summary>
-    /// Gets the subject filter for the consumer group.
+    /// Gets the partitioning filters, each pairing a subject filter with its wildcard positions for partitioning.
     /// </summary>
-    [JsonPropertyName("filter")]
-    public required string Filter { get; init; }
-
-    /// <summary>
-    /// Gets the wildcard positions used for partitioning (1-indexed).
-    /// </summary>
-    [JsonPropertyName("partitioning_wildcards")]
-    public required int[] PartitioningWildcards { get; init; }
+    [JsonPropertyName("partitioning_filters")]
+    public required NatsPcgPartitioningFilter[] PartitioningFilters { get; init; }
 
     /// <summary>
     /// Gets the optional maximum number of buffered messages.
