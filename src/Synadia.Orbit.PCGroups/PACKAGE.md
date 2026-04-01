@@ -212,6 +212,7 @@ Example: For `orders.*` with transform `{{partition(3,1)}}.orders.{{wildcard(1)}
 - `GetPcgElasticConfigAsync` - Get configuration for an existing group
 - `ConsumePcgElasticAsync` - Start consuming messages (returns `IAsyncEnumerable<NatsPcgMsg<T>>`)
 - `DeletePcgElasticAsync` - Delete a consumer group and its work-queue stream
+- `DeletePcgElasticWorkQueueConsumerAsync` - Delete a member's work-queue consumer
 - `ListPcgElasticAsync` - List all consumer groups for a stream
 - `ListPcgElasticActiveMembersAsync` - List active members
 - `AddPcgElasticMembersAsync` - Add members to the group
