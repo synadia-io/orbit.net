@@ -26,6 +26,10 @@ jobs:
             echo "::error::Invalid tag format. Expected: PackageName/vX.Y.Z, got: $TAG"
             exit 1
           fi
+          if [[ ! "$PKG" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::Package name contains invalid characters: $PKG"
+            exit 1
+          fi
           echo "pkg=$PKG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Package: $PKG, Version: $VERSION"
@@ -71,6 +75,6 @@ jobs:
 
       - name: Push
         working-directory: ./src/Synadia.Orbit.${{ steps.pkg.outputs.pkg }}/dist
-        run: |
-          ls -lh
-          dotnet nuget push *.nupkg -s https://api.nuget.org/v3/index.json -k "${{ secrets.NUGET_API_KEY }}" --skip-duplicate
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: dotnet nuget push *.nupkg -s https://api.nuget.org/v3/index.json -k "$NUGET_API_KEY" --skip-duplicate
