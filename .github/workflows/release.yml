@@ -22,6 +22,10 @@ jobs:
           # Tag format: PackageName/vX.Y.Z
           PKG="${TAG%%/*}"
           VERSION="${TAG#*/v}"
+          if [ "$PKG" = "$TAG" ] || [ -z "$VERSION" ]; then
+            echo "::error::Invalid tag format. Expected: PackageName/vX.Y.Z, got: $TAG"
+            exit 1
+          fi
           echo "pkg=$PKG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Package: $PKG, Version: $VERSION"
@@ -30,9 +34,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Validate version
+        env:
+          PKG: ${{ steps.pkg.outputs.pkg }}
+          VERSION: ${{ steps.pkg.outputs.version }}
         run: |
-          PKG="${{ steps.pkg.outputs.pkg }}"
-          VERSION="${{ steps.pkg.outputs.version }}"
           FILE_VERSION="$(head -n 1 "src/Synadia.Orbit.${PKG}/version.txt")"
           if [ "$VERSION" != "$FILE_VERSION" ]; then
             echo "::error::Tag version '$VERSION' does not match version.txt '$FILE_VERSION'"
