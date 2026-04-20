@@ -142,13 +142,14 @@ public class NatsServerProcess : IAsyncDisposable, IDisposable
         var portsFile = Path.Combine(portsFileDir, $"{natsServerExe}_{process.Id}.ports");
         log($"portsFile={portsFile}");
 
-        string? ports = null;
+        JsonDocument? portsJson = null;
         Exception? exception = null;
         for (var i = 0; i < 10; i++)
         {
             try
             {
-                ports = File.ReadAllText(portsFile);
+                var content = File.ReadAllText(portsFile);
+                portsJson = JsonDocument.Parse(content);
                 break;
             }
             catch (Exception e)
@@ -158,15 +159,14 @@ public class NatsServerProcess : IAsyncDisposable, IDisposable
             }
         }
 
-        if (ports == null)
+        if (portsJson == null)
         {
             throw new Exception("Failed to read ports file", exception);
         }
 
-        using var portsJson = JsonDocument.Parse(ports);
+        using var disposePortsJson = portsJson;
         var url = new Uri(portsJson.RootElement.GetProperty("nats")[0].GetString()!);
         var monitorUrl = new Uri(portsJson.RootElement.GetProperty("monitoring")[0].GetString()!);
-        log($"ports={ports}");
         log($"url={url}");
         log($"monitorUrl={monitorUrl}");
 
