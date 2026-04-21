@@ -32,9 +32,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Synadia.Orbit.PCGroups\Synadia.Orbit.PCGroups.csproj" />
     <ProjectReference Include="..\..\src\Synadia.Orbit.Testing.GoHarness\Synadia.Orbit.Testing.GoHarness.csproj" />
-    <ProjectReference Include="..\Synadia.Orbit.TestUtils\Synadia.Orbit.TestUtils.csproj"/>
   </ItemGroup>
 
 </Project>

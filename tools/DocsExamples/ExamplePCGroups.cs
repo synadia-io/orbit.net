@@ -7,6 +7,7 @@
 // dotnet add package Synadia.Orbit.PCGroups --prerelease
 using System.Threading.Channels;
 using NATS.Client.Core;
+using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
 using NATS.Net;
 using Synadia.Orbit.PCGroups;
@@ -49,7 +50,7 @@ public class ExamplePCGroups
                     streamName: "orders",
                     consumerGroupName: "order-processors",
                     maxNumMembers: 3,
-                    filter: "orders.*");
+                    filters: ["orders.*"]);
 
                 // Publish some test messages - they get transformed to {partition}.orders.{id}
                 for (int i = 0; i < 5; i++)
@@ -101,8 +102,7 @@ public class ExamplePCGroups
                     streamName: "events",
                     consumerGroupName: "event-processors",
                     maxNumMembers: 10,
-                    filter: "events.*",           // e.g., events.user123, events.user456
-                    partitioningWildcards: [1]);  // Partition by the first wildcard (user ID)
+                    partitioningFilters: [new NatsPcgPartitioningFilter("events.*", [1])]);
 
                 // Add members dynamically - partitions will be distributed across them
                 string[] members = ["worker-1", "worker-2", "worker-3"];
@@ -117,7 +117,7 @@ public class ExamplePCGroups
                 Console.WriteLine("Published 5 events, consuming with 3 workers...");
 
                 // Use a channel to aggregate messages from all workers
-                var channel = Channel.CreateUnbounded<(string Worker, NatsPcgMsg<Event> Msg)>();
+                var channel = Channel.CreateUnbounded<(string Worker, INatsJSMsg<Event> Msg)>();
                 using var cts = new CancellationTokenSource();
 
                 // Start a consumer task for each worker
@@ -198,11 +198,11 @@ public class ExamplePCGroups
                 };
 
                 await js.CreatePcgStaticAsync("orders2", "processors", maxNumMembers: 6,
-                    filter: "orders2.*", memberMappings: mappings);
+                    filters: ["orders2.*"], memberMappings: mappings);
 
                 // For elastic groups
                 await js.CreatePcgElasticAsync("events2", "processors", maxNumMembers: 6,
-                    filter: "events2.*", partitioningWildcards: [1]);
+                    partitioningFilters: [new NatsPcgPartitioningFilter("events2.*", [1])]);
                 await js.SetPcgElasticMemberMappingsAsync("events2", "processors", mappings);
 
                 Console.WriteLine("Created consumer groups with custom mappings.");

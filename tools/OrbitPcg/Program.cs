@@ -67,7 +67,7 @@ staticInfoCommand.SetAction(async (parseResult, ct) =>
     Console.WriteLine($"Static Consumer Group: {name}");
     Console.WriteLine($"  Stream:      {stream}");
     Console.WriteLine($"  MaxMembers:  {config.MaxMembers}");
-    Console.WriteLine($"  Filter:      {config.Filter ?? "(none)"}");
+    Console.WriteLine($"  Filters:     {(config.Filters != null ? string.Join(", ", config.Filters) : "(none)")}");
 
     if (config.Members != null)
     {
@@ -130,12 +130,12 @@ staticCreateCommand.SetAction(async (parseResult, ct) =>
     }
 
     var config = await js.CreatePcgStaticAsync(stream, name, maxMembers,
-        filter: filter, members: members, memberMappings: mappings, cancellationToken: ct);
+        filters: filter != null ? [filter] : null, members: members, memberMappings: mappings, cancellationToken: ct);
 
     Console.WriteLine($"Created static consumer group '{name}' on stream '{stream}'");
     Console.WriteLine($"  MaxMembers: {config.MaxMembers}");
-    if (config.Filter != null)
-        Console.WriteLine($"  Filter: {config.Filter}");
+    if (config.Filters != null)
+        Console.WriteLine($"  Filters: {string.Join(", ", config.Filters)}");
 });
 staticCommand.Add(staticCreateCommand);
 
@@ -329,8 +329,14 @@ elasticInfoCommand.SetAction(async (parseResult, ct) =>
     Console.WriteLine($"Elastic Consumer Group: {name}");
     Console.WriteLine($"  Stream:                {stream}");
     Console.WriteLine($"  MaxMembers:            {config.MaxMembers}");
-    Console.WriteLine($"  Filter:                {config.Filter}");
-    Console.WriteLine($"  PartitioningWildcards: [{string.Join(", ", config.PartitioningWildcards)}]");
+    if (config.PartitioningFilters != null)
+    {
+        Console.WriteLine("  PartitioningFilters:");
+        foreach (var pf in config.PartitioningFilters)
+        {
+            Console.WriteLine($"    {pf.Filter}: [{string.Join(", ", pf.PartitioningWildcards)}]");
+        }
+    }
 
     if (config.MaxBufferedMsgs.HasValue)
         Console.WriteLine($"  MaxBufferedMsgs:       {config.MaxBufferedMsgs}");
@@ -393,13 +399,20 @@ elasticCreateCommand.SetAction(async (parseResult, ct) =>
     await using var nats = new NatsConnection(new NatsOpts { Url = server });
     var js = nats.CreateJetStreamContext();
 
-    var config = await js.CreatePcgElasticAsync(stream, name, maxMembers, filter, wildcards,
+    var partitioningFilters = new[] { new NatsPcgPartitioningFilter(filter, wildcards) };
+    var config = await js.CreatePcgElasticAsync(stream, name, maxMembers, partitioningFilters,
         maxBufferedMessages: maxMsgs, maxBufferedBytes: maxBytes, cancellationToken: ct);
 
     Console.WriteLine($"Created elastic consumer group '{name}' on stream '{stream}'");
     Console.WriteLine($"  MaxMembers:            {config.MaxMembers}");
-    Console.WriteLine($"  Filter:                {config.Filter}");
-    Console.WriteLine($"  PartitioningWildcards: [{string.Join(", ", config.PartitioningWildcards)}]");
+    if (config.PartitioningFilters != null)
+    {
+        Console.WriteLine("  PartitioningFilters:");
+        foreach (var pf in config.PartitioningFilters)
+        {
+            Console.WriteLine($"    {pf.Filter}: [{string.Join(", ", pf.PartitioningWildcards)}]");
+        }
+    }
 });
 elasticCommand.Add(elasticCreateCommand);
 

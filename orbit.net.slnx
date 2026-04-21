@@ -24,6 +24,7 @@
     <Project Path="src/Synadia.Orbit.NatsCli.Plugin/Synadia.Orbit.NatsCli.Plugin.csproj" />
     <Project Path="src/Synadia.Orbit.Testing.NatsServerProcessManager/Synadia.Orbit.Testing.NatsServerProcessManager.csproj" />
     <Project Path="src/Synadia.Orbit.Counters/Synadia.Orbit.Counters.csproj" />
+    <Project Path="src/Synadia.Orbit.Testing.GoHarness/Synadia.Orbit.Testing.GoHarness.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <File Path="tests/Directory.Build.props" />
@@ -39,6 +40,7 @@
     <Project Path="tests/Synadia.Orbit.Counters.Test/Synadia.Orbit.Counters.Test.csproj" />
     <Project Path="tests/Synadia.Orbit.Testing.NatsServerProcessManager.Test/Synadia.Orbit.Testing.NatsServerProcessManager.Test.csproj" />
     <Project Path="tests/Synadia.Orbit.Benchmark/Synadia.Orbit.Benchmark.csproj" />
+    <Project Path="tests/Synadia.Orbit.Testing.GoHarness.Test/Synadia.Orbit.Testing.GoHarness.Test.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/DocsExamples/DocsExamples.csproj" />
