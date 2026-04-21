@@ -32,6 +32,22 @@ internal static class BatchPublishHelper
         };
     }
 
+    internal static NatsHeaders CloneHeaders(NatsHeaders? source)
+    {
+        var clone = new NatsHeaders();
+        if (source == null)
+        {
+            return clone;
+        }
+
+        foreach (var kv in source)
+        {
+            clone[kv.Key] = kv.Value;
+        }
+
+        return clone;
+    }
+
     internal static void ApplyBatchMessageOptions(NatsHeaders headers, NatsJSBatchMsgOpts? opts)
     {
         if (opts == null)
@@ -75,13 +91,11 @@ internal static class BatchPublishHelper
 
     internal static CancellationTokenSource CreateCommitCancellationTokenSource(CancellationToken cancellationToken, TimeSpan requestTimeout)
     {
-        if (!cancellationToken.CanBeCanceled)
-        {
-            var cts = new CancellationTokenSource(requestTimeout);
-            return cts;
-        }
-
-        return CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var cts = cancellationToken.CanBeCanceled
+            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+            : new CancellationTokenSource();
+        cts.CancelAfter(requestTimeout);
+        return cts;
     }
 
     internal static BatchPublishApiResponse? DeserializeApiResponse(byte[]? data)

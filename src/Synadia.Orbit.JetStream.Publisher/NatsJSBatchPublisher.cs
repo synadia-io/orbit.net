@@ -93,8 +93,8 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
             }
         }
 
-        // Prepare headers
-        var headers = msg.Headers ?? new NatsHeaders();
+        // Prepare headers on a fresh instance so we don't mutate the caller's NatsHeaders.
+        var headers = BatchPublishHelper.CloneHeaders(msg.Headers);
         BatchPublishHelper.ApplyBatchMessageOptions(headers, opts);
 
         headers[NatsJSBatchHeaders.BatchId] = _batchId;
@@ -162,13 +162,15 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
                 throw new NatsJSBatchClosedException();
             }
 
+            // Close the batch up-front so concurrent commits can't both send.
+            _closed = true;
             _sequence++;
             currentSeq = _sequence;
             batchId = _batchId;
         }
 
-        // Prepare headers
-        var headers = msg.Headers ?? new NatsHeaders();
+        // Prepare headers on a fresh instance so we don't mutate the caller's NatsHeaders.
+        var headers = BatchPublishHelper.CloneHeaders(msg.Headers);
         BatchPublishHelper.ApplyBatchMessageOptions(headers, opts);
 
         headers[NatsJSBatchHeaders.BatchId] = batchId;
@@ -177,7 +179,8 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
 
         var msgToSend = msg with { Headers = headers };
 
-        // Apply default timeout, matching Go's wrapContextWithoutDeadline behavior.
+        // Always bound the commit wait: even when the caller supplies a cancellation token,
+        // apply requestTimeout so a non-responsive server can't block indefinitely.
         using var cts = BatchPublishHelper.CreateCommitCancellationTokenSource(cancellationToken, _js.Opts.RequestTimeout);
 
         // Request with ack
@@ -186,11 +189,6 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
             msgToSend.Data,
             headers: msgToSend.Headers,
             cancellationToken: cts.Token).ConfigureAwait(false);
-
-        lock (_lock)
-        {
-            _closed = true;
-        }
 
         var batchResponse = BatchPublishHelper.DeserializeAckResponse(response.Data);
 
