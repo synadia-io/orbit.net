@@ -3,7 +3,6 @@
 
 using NATS.Client.Core;
 using NATS.Client.JetStream;
-using NATS.Client.JetStream.Models;
 
 namespace Synadia.Orbit.JetStream.Publisher;
 
@@ -12,11 +11,6 @@ namespace Synadia.Orbit.JetStream.Publisher;
 /// </summary>
 public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
 {
-    /// <summary>
-    /// Maximum number of messages allowed in a single batch (server-enforced limit).
-    /// </summary>
-    internal const int MaxBatchSize = 1000;
-
     private readonly INatsJSContext _js;
     private readonly string _batchId;
     private readonly NatsJSBatchFlowControl _flowControl;
@@ -82,11 +76,6 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
             if (_closed)
             {
                 throw new NatsJSBatchClosedException();
-            }
-
-            if (_sequence >= MaxBatchSize)
-            {
-                throw new NatsJSBatchPublishException(new ApiError { Code = 400, ErrCode = NatsJSBatchPublishException.ErrCodeExceedsLimit, Description = "Batch publish sequence exceeds server limit" });
             }
 
             _sequence++;
@@ -171,11 +160,6 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
             if (_closed)
             {
                 throw new NatsJSBatchClosedException();
-            }
-
-            if (_sequence >= MaxBatchSize)
-            {
-                throw new NatsJSBatchPublishException(new ApiError { Code = 400, ErrCode = NatsJSBatchPublishException.ErrCodeExceedsLimit, Description = "Batch publish sequence exceeds server limit" });
             }
 
             _sequence++;

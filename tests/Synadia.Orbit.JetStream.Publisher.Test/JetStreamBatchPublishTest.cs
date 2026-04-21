@@ -330,7 +330,7 @@ public class JetStreamBatchPublishTest
             };
         }
 
-        var ex = await Assert.ThrowsAsync<NatsJSBatchPublishException>(
+        var ex = await Assert.ThrowsAsync<NatsJSBatchPublishExceedsLimitException>(
             async () => await js.PublishMsgBatchAsync(messages, cancellationToken: ct));
         Assert.Equal(NatsJSBatchPublishException.ErrCodeExceedsLimit, ex.Error.ErrCode);
     }
@@ -364,7 +364,7 @@ public class JetStreamBatchPublishTest
             });
 
         // First message should fail with batch publish not enabled
-        var ex = await Assert.ThrowsAsync<NatsJSBatchPublishException>(
+        var ex = await Assert.ThrowsAsync<NatsJSBatchPublishNotEnabledException>(
             async () => await batch.AddAsync($"{subject}.1", "message 1"u8.ToArray(), cancellationToken: ct));
         Assert.Equal(NatsJSBatchPublishException.ErrCodeNotEnabled, ex.Error.ErrCode);
     }
@@ -409,7 +409,7 @@ public class JetStreamBatchPublishTest
         }
 
         // This should be message 1001 and should fail with exceeds limit error
-        var ex = await Assert.ThrowsAsync<NatsJSBatchPublishException>(
+        var ex = await Assert.ThrowsAsync<NatsJSBatchPublishExceedsLimitException>(
             async () => await batch2.CommitAsync($"{subject}.2", "message 2"u8.ToArray(), cancellationToken: ct));
         Assert.Equal(NatsJSBatchPublishException.ErrCodeExceedsLimit, ex.Error.ErrCode);
     }
@@ -495,7 +495,7 @@ public class JetStreamBatchPublishTest
             await batch.AddAsync($"{subject}.1", "message 1"u8.ToArray(), cancellationToken: ct);
 
             // If Add didn't fail, Commit should fail
-            var ex = await Assert.ThrowsAsync<NatsJSBatchPublishException>(
+            var ex = await Assert.ThrowsAsync<NatsJSBatchPublishIncompleteException>(
                 async () => await batch.CommitAsync($"{subject}.2", "message 2"u8.ToArray(), cancellationToken: ct));
             Assert.Equal(NatsJSBatchPublishException.ErrCodeIncomplete, ex.Error.ErrCode);
         }

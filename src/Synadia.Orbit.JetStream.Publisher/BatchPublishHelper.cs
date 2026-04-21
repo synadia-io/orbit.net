@@ -14,12 +14,22 @@ internal static class BatchPublishHelper
 {
     internal static void ThrowBatchPublishException(BatchPublishErrorResponse error)
     {
-        throw new NatsJSBatchPublishException(new ApiError
+        var apiError = new ApiError
         {
             Code = error.Code,
             ErrCode = error.ErrCode,
             Description = error.Description,
-        });
+        };
+
+        throw error.ErrCode switch
+        {
+            NatsJSBatchPublishException.ErrCodeNotEnabled => new NatsJSBatchPublishNotEnabledException(apiError),
+            NatsJSBatchPublishException.ErrCodeMissingSeq => new NatsJSBatchPublishMissingSeqException(apiError),
+            NatsJSBatchPublishException.ErrCodeIncomplete => new NatsJSBatchPublishIncompleteException(apiError),
+            NatsJSBatchPublishException.ErrCodeUnsupportedHeader => new NatsJSBatchPublishUnsupportedHeaderException(apiError),
+            NatsJSBatchPublishException.ErrCodeExceedsLimit => new NatsJSBatchPublishExceedsLimitException(apiError),
+            _ => new NatsJSBatchPublishException(apiError),
+        };
     }
 
     internal static void ApplyBatchMessageOptions(NatsHeaders headers, NatsJSBatchMsgOpts? opts)

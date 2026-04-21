@@ -3,7 +3,6 @@
 
 using NATS.Client.Core;
 using NATS.Client.JetStream;
-using NATS.Client.JetStream.Models;
 
 namespace Synadia.Orbit.JetStream.Publisher;
 
@@ -29,11 +28,6 @@ public static class NatsJSBatchPublishExtensions
         if (messages.Count == 0)
         {
             throw new ArgumentException("No messages to publish", nameof(messages));
-        }
-
-        if (messages.Count > NatsJSBatchPublisher.MaxBatchSize)
-        {
-            throw new NatsJSBatchPublishException(new ApiError { Code = 400, ErrCode = NatsJSBatchPublishException.ErrCodeExceedsLimit, Description = "Batch publish sequence exceeds server limit" });
         }
 
         await using var publisher = new NatsJSBatchPublisher(js, flowControl);
