@@ -186,11 +186,19 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
         using var cts = BatchPublishHelper.CreateCommitCancellationTokenSource(cancellationToken, _js.Opts.RequestTimeout);
 
         // Request with ack
-        var response = await _js.Connection.RequestAsync<byte[], byte[]>(
-            msgToSend.Subject,
-            msgToSend.Data,
-            headers: msgToSend.Headers,
-            cancellationToken: cts.Token).ConfigureAwait(false);
+        NatsMsg<byte[]> response;
+        try
+        {
+            response = await _js.Connection.RequestAsync<byte[], byte[]>(
+                msgToSend.Subject,
+                msgToSend.Data,
+                headers: msgToSend.Headers,
+                cancellationToken: cts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException($"Batch commit ack failed: timeout after {_js.Opts.RequestTimeout}");
+        }
 
         var batchResponse = BatchPublishHelper.DeserializeAckResponse(response.Data);
 

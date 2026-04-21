@@ -62,8 +62,14 @@ internal static class BatchPublishHelper
 
         if (opts.Ttl.HasValue)
         {
+            // Server uses time.ParseDuration and enforces a 1-second minimum. Reject sub-second
+            // values here so callers don't silently get "0s" (no TTL / immediate expire).
+            if (opts.Ttl.Value < TimeSpan.FromSeconds(1))
+            {
+                throw new ArgumentException("Ttl must be at least 1 second", nameof(opts));
+            }
+
             // Format as Go duration string (e.g. "5s") which the server parses via time.ParseDuration.
-            // Minimum TTL is 1 second; matches the format used by NATS .NET KV store.
             headers["Nats-TTL"] = $"{(long)opts.Ttl.Value.TotalSeconds:D}s";
         }
 
