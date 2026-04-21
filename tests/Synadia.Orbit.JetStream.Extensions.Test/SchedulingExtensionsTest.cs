@@ -572,7 +572,7 @@ public class SchedulingExtensionsTest
     }
 
     [Fact]
-    public async Task Schedule_source_not_found_should_remove_schedule()
+    public async Task Schedule_source_not_found_should_fall_back_to_schedule_body()
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
         await connection.ConnectRetryAsync();
@@ -591,38 +591,53 @@ public class SchedulingExtensionsTest
         var streamConfig = new StreamConfig($"{prefix}s1", [$"{prefix}foo.*"])
         {
             AllowMsgSchedules = true,
+            AllowDirect = true,
         };
 
         await js.CreateStreamAsync(streamConfig, ct);
 
-        // Publish a scheduled message with a source subject that has no messages
+        // Publish a scheduled message with a source subject that has no messages.
+        // Per ADR-51 rev 5, the server falls back to the schedule's own body and
+        // headers when the source subject has no last message.
+        var schedHeaders = new NatsHeaders { { "Custom", "MyValue" } };
         var schedule = new NatsMsgSchedule("@at 1970-01-01T00:00:00Z", $"{prefix}foo.publish")
         {
             Source = $"{prefix}foo.data",
         };
 
-        var ack = await js.PublishScheduledAsync(
+        await js.PublishScheduledAsync(
             $"{prefix}foo.schedule",
+            "scheduled-payload",
             schedule,
+            headers: schedHeaders,
             cancellationToken: ct);
 
-        Assert.Null(ack.Error);
-        Assert.Equal(1UL, ack.Seq);
-
-        // The schedule fires but finds no source message, so it's removed from the scheduler.
-        // The schedule message itself remains in the store.
-        // Since this is a negative test (proving nothing happens), we wait for the scheduler
-        // to have had a chance to fire, then verify no new message was produced.
         var stream = await js.GetStreamAsync($"{prefix}s1", cancellationToken: ct);
         await WaitUntilAsync(
             async () =>
             {
-                await Task.Delay(TimeSpan.FromSeconds(1), ct).ConfigureAwait(false);
                 await stream.RefreshAsync(ct).ConfigureAwait(false);
-                return stream.Info.State.LastSeq == 1 && stream.Info.State.Messages == 1;
+                return stream.Info.State.LastSeq == 2 && stream.Info.State.Messages == 1;
             },
             TimeSpan.FromSeconds(10),
             ct);
+
+        // The produced message on the target carries the schedule's own body and
+        // custom header, plus the scheduler annotations.
+        var msg = await stream.GetDirectAsync<string>(
+            new StreamMsgGetRequest { LastBySubj = $"{prefix}foo.publish" },
+            cancellationToken: ct);
+
+        Assert.Equal("scheduled-payload", msg.Data);
+        Assert.NotNull(msg.Headers);
+        Assert.Equal($"{prefix}foo.schedule", msg.Headers["Nats-Scheduler"].ToString());
+        Assert.Equal("purge", msg.Headers["Nats-Schedule-Next"].ToString());
+        Assert.Equal("MyValue", msg.Headers["Custom"].ToString());
+
+        // Schedule headers should be stripped from the delivered message.
+        Assert.False(msg.Headers.ContainsKey("Nats-Schedule"));
+        Assert.False(msg.Headers.ContainsKey("Nats-Schedule-Target"));
+        Assert.False(msg.Headers.ContainsKey("Nats-Schedule-Source"));
     }
 
     private static async Task WaitUntilAsync(Func<Task<bool>> condition, TimeSpan timeout, CancellationToken ct)
