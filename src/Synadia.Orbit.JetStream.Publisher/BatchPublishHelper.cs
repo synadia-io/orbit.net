@@ -85,7 +85,6 @@ internal static class BatchPublishHelper
         if (!string.IsNullOrEmpty(opts.LastSubject))
         {
             headers["Nats-Expected-Last-Subject-Sequence-Subject"] = opts.LastSubject;
-            headers["Nats-Expected-Last-Subject-Sequence"] = opts.LastSubjectSeq!.Value.ToString();
         }
     }
 

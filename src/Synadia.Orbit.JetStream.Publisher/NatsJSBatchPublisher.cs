@@ -109,8 +109,10 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
             return;
         }
 
-        // Request with ack
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        // Request with ack. Only allocate a linked CTS when the caller actually has a cancellable token.
+        using var cts = cancellationToken.CanBeCanceled
+            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+            : new CancellationTokenSource();
         cts.CancelAfter(_flowControl.AckTimeout);
 
         NatsMsg<byte[]> response;
@@ -230,7 +232,14 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Closes the batch publisher locally. Equivalent to <see cref="Discard"/> when called on an
+    /// uncommitted batch: messages already sent with <see cref="AddAsync"/> or <see cref="AddMsgAsync"/>
+    /// remain as an incomplete batch on the server until the server's batch timeout expires and
+    /// the in-progress messages are garbage collected. To finalize a batch explicitly, call
+    /// <see cref="CommitAsync"/> or <see cref="CommitMsgAsync"/> before disposal.
+    /// </summary>
+    /// <returns>A completed <see cref="ValueTask"/>.</returns>
     public ValueTask DisposeAsync()
     {
         lock (_lock)
