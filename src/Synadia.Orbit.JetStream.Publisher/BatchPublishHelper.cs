@@ -3,6 +3,7 @@
 
 #pragma warning disable SA1600 // Elements should be documented (internal helpers)
 
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
@@ -12,6 +13,7 @@ namespace Synadia.Orbit.JetStream.Publisher;
 
 internal static class BatchPublishHelper
 {
+    [DoesNotReturn]
     internal static void ThrowBatchPublishException(BatchPublishErrorResponse error)
     {
         var apiError = new ApiError

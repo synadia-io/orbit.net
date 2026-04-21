@@ -9,6 +9,12 @@ namespace Synadia.Orbit.JetStream.Publisher;
 /// <summary>
 /// Implementation of batch publisher for publishing messages to a stream in batches.
 /// </summary>
+/// <remarks>
+/// This class is not thread-safe. <see cref="AddAsync"/> and <see cref="AddMsgAsync"/> must be
+/// called sequentially by a single producer: concurrent calls can reach the socket in an order
+/// different from the one in which sequence numbers were assigned, and the server will reject
+/// out-of-order sequences.
+/// </remarks>
 public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
 {
     private readonly INatsJSContext _js;
@@ -126,6 +132,9 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
+            // Timed out waiting for the flow-control ack. The batch is effectively dead on
+            // the server; close locally so further Add/Commit calls fail fast.
+            CloseOnError();
             throw new TimeoutException($"Batch message {currentSeq} ack failed: timeout after {_flowControl.AckTimeout}");
         }
 
@@ -135,6 +144,9 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
             var apiResponse = BatchPublishHelper.DeserializeApiResponse(response.Data);
             if (apiResponse?.Error != null)
             {
+                // Server rejected the batch. Close locally so further Add/Commit calls fail fast
+                // instead of silently targeting a dead batch.
+                CloseOnError();
                 BatchPublishHelper.ThrowBatchPublishException(apiResponse.Error);
             }
         }
@@ -259,5 +271,13 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
         }
 
         return default;
+    }
+
+    private void CloseOnError()
+    {
+        lock (_lock)
+        {
+            _closed = true;
+        }
     }
 }
