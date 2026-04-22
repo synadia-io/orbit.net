@@ -25,6 +25,7 @@ public record NatsJSBatchMsgOpts
 
     /// <summary>
     /// Gets the expected sequence number the last message on a subject should have.
+    /// When set without <see cref="LastSubject"/>, the check applies to the message's own subject.
     /// </summary>
     public ulong? LastSubjectSeq { get; init; }
 

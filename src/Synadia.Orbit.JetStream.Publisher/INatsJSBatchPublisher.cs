@@ -8,6 +8,12 @@ namespace Synadia.Orbit.JetStream.Publisher;
 /// <summary>
 /// Provides methods for publishing messages to a stream in batches.
 /// </summary>
+/// <remarks>
+/// Disposing without calling <see cref="CommitAsync"/> or <see cref="CommitMsgAsync"/> closes the
+/// publisher locally but leaves any already-sent messages as an incomplete batch on the server
+/// until the server's batch timeout expires. Call <see cref="Discard"/> or commit before disposal
+/// to make the intent explicit.
+/// </remarks>
 public interface INatsJSBatchPublisher : IAsyncDisposable
 {
     /// <summary>
@@ -28,6 +34,12 @@ public interface INatsJSBatchPublisher : IAsyncDisposable
     /// <param name="opts">Optional per-message options.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
+    /// <remarks>
+    /// When flow control is disabled (<see cref="NatsJSBatchFlowControl.AckFirst"/> is false and
+    /// <see cref="NatsJSBatchFlowControl.AckEvery"/> is 0), this method publishes fire-and-forget.
+    /// Server-side errors for individual messages are not observed until
+    /// <see cref="CommitAsync"/>/<see cref="CommitMsgAsync"/> is called.
+    /// </remarks>
     Task AddAsync(string subject, byte[] data, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -37,6 +49,12 @@ public interface INatsJSBatchPublisher : IAsyncDisposable
     /// <param name="opts">Optional per-message options.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
+    /// <remarks>
+    /// When flow control is disabled (<see cref="NatsJSBatchFlowControl.AckFirst"/> is false and
+    /// <see cref="NatsJSBatchFlowControl.AckEvery"/> is 0), this method publishes fire-and-forget.
+    /// Server-side errors for individual messages are not observed until
+    /// <see cref="CommitAsync"/>/<see cref="CommitMsgAsync"/> is called.
+    /// </remarks>
     Task AddMsgAsync(NatsMsg<byte[]> msg, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default);
 
     /// <summary>

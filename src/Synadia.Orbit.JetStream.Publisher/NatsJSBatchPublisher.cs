@@ -20,6 +20,7 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
     private readonly INatsJSContext _js;
     private readonly string _batchId;
     private readonly NatsJSBatchFlowControl _flowControl;
+    private readonly TimeSpan _ackTimeout;
     private readonly object _lock = new();
     private int _sequence;
     private bool _closed;
@@ -33,7 +34,8 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
     {
         _js = js;
         _batchId = Nuid.NewNuid();
-        _flowControl = flowControl ?? new NatsJSBatchFlowControl { AckTimeout = js.Opts.RequestTimeout };
+        _flowControl = flowControl ?? new NatsJSBatchFlowControl();
+        _ackTimeout = _flowControl.AckTimeout ?? js.Opts.RequestTimeout;
     }
 
     /// <inheritdoc />
@@ -119,7 +121,7 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
         using var cts = cancellationToken.CanBeCanceled
             ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
             : new CancellationTokenSource();
-        cts.CancelAfter(_flowControl.AckTimeout);
+        cts.CancelAfter(_ackTimeout);
 
         NatsMsg<byte[]> response;
         try
@@ -135,7 +137,7 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
             // Timed out waiting for the flow-control ack. The batch is effectively dead on
             // the server; close locally so further Add/Commit calls fail fast.
             CloseOnError();
-            throw new TimeoutException($"Batch message {currentSeq} ack failed: timeout after {_flowControl.AckTimeout}");
+            throw new TimeoutException($"Batch message {currentSeq} ack failed: timeout after {_ackTimeout}");
         }
 
         // For flow control we expect no response data or an error

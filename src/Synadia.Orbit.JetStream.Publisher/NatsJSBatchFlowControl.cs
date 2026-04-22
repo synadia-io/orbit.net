@@ -20,6 +20,7 @@ public record NatsJSBatchFlowControl
 
     /// <summary>
     /// Gets the timeout for waiting for acks when flow control is enabled.
+    /// When null (the default), the connection's <c>RequestTimeout</c> is used.
     /// </summary>
-    public TimeSpan AckTimeout { get; init; } = TimeSpan.FromSeconds(5);
+    public TimeSpan? AckTimeout { get; init; }
 }
