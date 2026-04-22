@@ -502,9 +502,12 @@ public class JetStreamBatchPublishTest
                 async () => await batch.CommitAsync($"{subject}.2", "message 2"u8.ToArray(), cancellationToken: ct));
             Assert.Equal(NatsJSBatchPublishException.ErrCodeIncomplete, ex.Error.ErrCode);
         }
-        catch (NatsJSBatchPublishTooManyInflightException ex)
+        catch (NatsJSBatchPublishException ex) when (
+            ex.Error.ErrCode == NatsJSBatchPublishException.ErrCodeTooManyInflight ||
+            ex.Error.ErrCode == NatsJSBatchPublishException.ErrCodeIncomplete)
         {
-            Assert.Equal(NatsJSBatchPublishException.ErrCodeTooManyInflight, ex.Error.ErrCode);
+            // Outstanding-batch-limit surfaces either as explicit TooManyInflight (10210) or
+            // as Incomplete (10176) depending on where the server hits the limit.
         }
     }
 
