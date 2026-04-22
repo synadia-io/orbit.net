@@ -144,7 +144,19 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
         // For flow control we expect no response data or an error
         if (response.Data?.Length > 0)
         {
-            var apiResponse = BatchPublishHelper.DeserializeApiResponse(response.Data);
+            BatchPublishApiResponse? apiResponse;
+            try
+            {
+                apiResponse = BatchPublishHelper.DeserializeApiResponse(response.Data);
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                // Malformed server response. The message was sent and the sequence advanced,
+                // so the batch is now in an unrecoverable state.
+                CloseOnError();
+                throw;
+            }
+
             if (apiResponse?.Error != null)
             {
                 // Server rejected the batch. Close locally so further Add/Commit calls fail fast
