@@ -446,17 +446,18 @@ public class JetStreamBatchPublishTest
             },
             cancellationToken: ct);
 
-        // Commit should fail with unsupported header error (server version dependent)
+        // Commit should fail with unsupported header error (server version dependent).
+        // Either the server rejects the unsupported header, or it accepts both messages
+        // cleanly - any other outcome (partial commit, silently dropped message) is a regression.
         try
         {
-            await batch.CommitAsync($"{subject}.2", "message 2"u8.ToArray(), cancellationToken: ct);
-
-            // If server didn't reject, this check may not be enforced in this version
+            var ack = await batch.CommitAsync($"{subject}.2", "message 2"u8.ToArray(), cancellationToken: ct);
+            Assert.Equal(2, ack.BatchSize);
             _output.WriteLine("Server did not reject unsupported Nats-Msg-Id header in batch");
         }
-        catch (NatsJSBatchPublishException)
+        catch (NatsJSBatchPublishUnsupportedHeaderException ex)
         {
-            // Expected - server enforces the header check
+            Assert.Equal(NatsJSBatchPublishException.ErrCodeUnsupportedHeader, ex.Error.ErrCode);
         }
     }
 
@@ -479,7 +480,9 @@ public class JetStreamBatchPublishTest
             new StreamConfig(streamName, [$"{subject}.>"]) { AllowAtomicPublish = true },
             ct);
 
-        // Create 50 batches (the default max) and add a message to each
+        // Create 50 batches (the default max) and add a message to each.
+        // Intentionally not disposed: we want the server-side batch slots to stay occupied
+        // so the 51st publisher below hits the limit.
         for (int i = 0; i < 50; i++)
         {
             var b = new NatsJSBatchPublisher(js);

@@ -47,6 +47,12 @@ public interface INatsJSBatchPublisher : IAsyncDisposable
     /// <param name="opts">Optional per-message options.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task containing the batch acknowledgment.</returns>
+    /// <remarks>
+    /// If a <see cref="TimeoutException"/> is thrown, the commit request was already sent to the
+    /// server. The batch may or may not have been persisted; the ack may simply have been lost.
+    /// There is no idempotency key for commits, so callers should check the stream's last sequence
+    /// to determine whether the batch was actually written before retrying.
+    /// </remarks>
     Task<NatsJSBatchAck> CommitAsync(string subject, byte[] data, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -56,6 +62,12 @@ public interface INatsJSBatchPublisher : IAsyncDisposable
     /// <param name="opts">Optional per-message options.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task containing the batch acknowledgment.</returns>
+    /// <remarks>
+    /// If a <see cref="TimeoutException"/> is thrown, the commit request was already sent to the
+    /// server. The batch may or may not have been persisted; the ack may simply have been lost.
+    /// There is no idempotency key for commits, so callers should check the stream's last sequence
+    /// to determine whether the batch was actually written before retrying.
+    /// </remarks>
     Task<NatsJSBatchAck> CommitMsgAsync(NatsMsg<byte[]> msg, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default);
 
     /// <summary>
