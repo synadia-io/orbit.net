@@ -30,6 +30,7 @@ internal static class BatchPublishHelper
             NatsJSBatchPublishException.ErrCodeIncomplete => new NatsJSBatchPublishIncompleteException(apiError),
             NatsJSBatchPublishException.ErrCodeUnsupportedHeader => new NatsJSBatchPublishUnsupportedHeaderException(apiError),
             NatsJSBatchPublishException.ErrCodeExceedsLimit => new NatsJSBatchPublishExceedsLimitException(apiError),
+            NatsJSBatchPublishException.ErrCodeTooManyInflight => new NatsJSBatchPublishTooManyInflightException(apiError),
             _ => new NatsJSBatchPublishException(apiError),
         };
     }

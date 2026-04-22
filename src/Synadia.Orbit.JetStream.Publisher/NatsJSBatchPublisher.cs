@@ -76,6 +76,11 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
     /// <inheritdoc />
     public async Task AddMsgAsync(NatsMsg<byte[]> msg, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
     {
+        // Prepare headers on a fresh instance so we don't mutate the caller's NatsHeaders.
+        // Validate opts before touching _sequence so a thrown ArgumentException doesn't leave a gap.
+        var headers = BatchPublishHelper.CloneHeaders(msg.Headers);
+        BatchPublishHelper.ApplyBatchMessageOptions(headers, opts);
+
         int currentSeq;
         bool needsAck;
 
@@ -100,10 +105,6 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
                 needsAck = true; // periodic flow control
             }
         }
-
-        // Prepare headers on a fresh instance so we don't mutate the caller's NatsHeaders.
-        var headers = BatchPublishHelper.CloneHeaders(msg.Headers);
-        BatchPublishHelper.ApplyBatchMessageOptions(headers, opts);
 
         headers[NatsJSBatchHeaders.BatchId] = _batchId;
         headers[NatsJSBatchHeaders.BatchSeq] = currentSeq.ToString();
@@ -168,6 +169,11 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
     /// <inheritdoc />
     public async Task<NatsJSBatchAck> CommitMsgAsync(NatsMsg<byte[]> msg, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
     {
+        // Prepare headers on a fresh instance so we don't mutate the caller's NatsHeaders.
+        // Validate opts before touching _sequence so a thrown ArgumentException doesn't close the batch.
+        var headers = BatchPublishHelper.CloneHeaders(msg.Headers);
+        BatchPublishHelper.ApplyBatchMessageOptions(headers, opts);
+
         int currentSeq;
         string batchId;
 
@@ -184,10 +190,6 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
             currentSeq = _sequence;
             batchId = _batchId;
         }
-
-        // Prepare headers on a fresh instance so we don't mutate the caller's NatsHeaders.
-        var headers = BatchPublishHelper.CloneHeaders(msg.Headers);
-        BatchPublishHelper.ApplyBatchMessageOptions(headers, opts);
 
         headers[NatsJSBatchHeaders.BatchId] = batchId;
         headers[NatsJSBatchHeaders.BatchSeq] = currentSeq.ToString();

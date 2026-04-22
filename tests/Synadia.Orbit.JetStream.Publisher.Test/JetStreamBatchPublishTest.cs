@@ -502,9 +502,9 @@ public class JetStreamBatchPublishTest
                 async () => await batch.CommitAsync($"{subject}.2", "message 2"u8.ToArray(), cancellationToken: ct));
             Assert.Equal(NatsJSBatchPublishException.ErrCodeIncomplete, ex.Error.ErrCode);
         }
-        catch (NatsJSBatchPublishException)
+        catch (NatsJSBatchPublishTooManyInflightException ex)
         {
-            // This is also expected - too many outstanding batches
+            Assert.Equal(NatsJSBatchPublishException.ErrCodeTooManyInflight, ex.Error.ErrCode);
         }
     }
 

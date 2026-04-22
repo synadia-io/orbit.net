@@ -37,6 +37,11 @@ public class NatsJSBatchPublishException : NatsJSApiException
     public const int ErrCodeExceedsLimit = 10199;
 
     /// <summary>
+    /// Error code indicating the server has too many in-flight atomic publish batches.
+    /// </summary>
+    public const int ErrCodeTooManyInflight = 10210;
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="NatsJSBatchPublishException"/> class.
     /// </summary>
     /// <param name="error">The API error returned by the server.</param>
