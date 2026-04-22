@@ -196,8 +196,8 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
         var msgToSend = msg with { Headers = headers };
 
         // Always bound the commit wait: even when the caller supplies a cancellation token,
-        // apply requestTimeout so a non-responsive server can't block indefinitely.
-        using var cts = BatchPublishHelper.CreateCommitCancellationTokenSource(cancellationToken, _js.Opts.RequestTimeout);
+        // apply the ack timeout so a non-responsive server can't block indefinitely.
+        using var cts = BatchPublishHelper.CreateCommitCancellationTokenSource(cancellationToken, _ackTimeout);
 
         // Request with ack
         NatsMsg<byte[]> response;
@@ -211,7 +211,7 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new TimeoutException($"Batch commit ack failed: timeout after {_js.Opts.RequestTimeout}");
+            throw new TimeoutException($"Batch commit ack failed: timeout after {_ackTimeout}");
         }
 
         var batchResponse = BatchPublishHelper.DeserializeAckResponse(response.Data);
