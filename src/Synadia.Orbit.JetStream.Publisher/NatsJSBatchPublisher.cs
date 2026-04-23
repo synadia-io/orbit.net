@@ -1,0 +1,299 @@
+// Copyright (c) Synadia Communications, Inc. All rights reserved.
+// Licensed under the Apache License, Version 2.0.
+
+using NATS.Client.Core;
+using NATS.Client.JetStream;
+
+namespace Synadia.Orbit.JetStream.Publisher;
+
+/// <summary>
+/// Implementation of batch publisher for publishing messages to a stream in batches.
+/// </summary>
+/// <remarks>
+/// This class is not thread-safe. <see cref="AddAsync"/> and <see cref="AddMsgAsync"/> must be
+/// called sequentially by a single producer: concurrent calls can reach the socket in an order
+/// different from the one in which sequence numbers were assigned, and the server will reject
+/// out-of-order sequences.
+/// </remarks>
+public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
+{
+    private readonly INatsJSContext _js;
+    private readonly string _batchId;
+    private readonly NatsJSBatchFlowControl _flowControl;
+    private readonly TimeSpan _ackTimeout;
+    private readonly object _lock = new();
+    private int _sequence;
+    private bool _closed;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="NatsJSBatchPublisher"/> class.
+    /// </summary>
+    /// <param name="js">The JetStream context to use for publishing.</param>
+    /// <param name="flowControl">Optional flow control configuration.</param>
+    public NatsJSBatchPublisher(INatsJSContext js, NatsJSBatchFlowControl? flowControl = null)
+    {
+        _js = js;
+        _batchId = Nuid.NewNuid();
+        _flowControl = flowControl ?? new NatsJSBatchFlowControl();
+        _ackTimeout = _flowControl.AckTimeout ?? js.Opts.RequestTimeout;
+    }
+
+    /// <inheritdoc />
+    public int Size
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _sequence;
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public bool IsClosed
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _closed;
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public Task AddAsync(string subject, byte[] data, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
+    {
+        var msg = new NatsMsg<byte[]>
+        {
+            Subject = subject,
+            Data = data,
+        };
+        return AddMsgAsync(msg, opts, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task AddMsgAsync(NatsMsg<byte[]> msg, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
+    {
+        // Prepare headers on a fresh instance so we don't mutate the caller's NatsHeaders.
+        // Validate opts before touching _sequence so a thrown ArgumentException doesn't leave a gap.
+        var headers = BatchPublishHelper.CloneHeaders(msg.Headers);
+        BatchPublishHelper.ApplyBatchMessageOptions(headers, opts);
+
+        int currentSeq;
+        bool needsAck;
+
+        lock (_lock)
+        {
+            if (_closed)
+            {
+                throw new NatsJSBatchClosedException();
+            }
+
+            _sequence++;
+            currentSeq = _sequence;
+
+            // Determine if we need flow control for this message
+            needsAck = false;
+            if (_flowControl.AckFirst && currentSeq == 1)
+            {
+                needsAck = true; // wait on first message
+            }
+            else if (_flowControl.AckEvery > 0 && currentSeq % _flowControl.AckEvery == 0)
+            {
+                needsAck = true; // periodic flow control
+            }
+        }
+
+        headers[NatsJSBatchHeaders.BatchId] = _batchId;
+        headers[NatsJSBatchHeaders.BatchSeq] = currentSeq.ToString();
+
+        var msgToSend = msg with { Headers = headers };
+
+        // If we don't need an ack, use core NATS publish
+        if (!needsAck)
+        {
+            await _js.Connection.PublishAsync(msgToSend.Subject, msgToSend.Data, headers: msgToSend.Headers, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        // Request with ack. Only allocate a linked CTS when the caller actually has a cancellable token.
+        using var cts = cancellationToken.CanBeCanceled
+            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+            : new CancellationTokenSource();
+        cts.CancelAfter(_ackTimeout);
+
+        NatsMsg<byte[]> response;
+        try
+        {
+            response = await _js.Connection.RequestAsync<byte[], byte[]>(
+                msgToSend.Subject,
+                msgToSend.Data,
+                headers: msgToSend.Headers,
+                cancellationToken: cts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // Timed out waiting for the flow-control ack. The batch is effectively dead on
+            // the server; close locally so further Add/Commit calls fail fast.
+            CloseOnError();
+            throw new TimeoutException($"Batch message {currentSeq} ack failed: timeout after {_ackTimeout}");
+        }
+
+        // For flow control we expect no response data or an error
+        if (response.Data?.Length > 0)
+        {
+            BatchPublishApiResponse? apiResponse;
+            try
+            {
+                apiResponse = BatchPublishHelper.DeserializeApiResponse(response.Data);
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                // Malformed server response. The message was sent and the sequence advanced,
+                // so the batch is now in an unrecoverable state.
+                CloseOnError();
+                throw;
+            }
+
+            if (apiResponse?.Error != null)
+            {
+                // Server rejected the batch. Close locally so further Add/Commit calls fail fast
+                // instead of silently targeting a dead batch.
+                CloseOnError();
+                BatchPublishHelper.ThrowBatchPublishException(apiResponse.Error);
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public Task<NatsJSBatchAck> CommitAsync(string subject, byte[] data, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
+    {
+        var msg = new NatsMsg<byte[]>
+        {
+            Subject = subject,
+            Data = data,
+        };
+        return CommitMsgAsync(msg, opts, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<NatsJSBatchAck> CommitMsgAsync(NatsMsg<byte[]> msg, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
+    {
+        // Prepare headers on a fresh instance so we don't mutate the caller's NatsHeaders.
+        // Validate opts before touching _sequence so a thrown ArgumentException doesn't close the batch.
+        var headers = BatchPublishHelper.CloneHeaders(msg.Headers);
+        BatchPublishHelper.ApplyBatchMessageOptions(headers, opts);
+
+        int currentSeq;
+        string batchId;
+
+        lock (_lock)
+        {
+            if (_closed)
+            {
+                throw new NatsJSBatchClosedException();
+            }
+
+            // Close the batch up-front so concurrent commits can't both send.
+            _closed = true;
+            _sequence++;
+            currentSeq = _sequence;
+            batchId = _batchId;
+        }
+
+        headers[NatsJSBatchHeaders.BatchId] = batchId;
+        headers[NatsJSBatchHeaders.BatchSeq] = currentSeq.ToString();
+        headers[NatsJSBatchHeaders.BatchCommit] = "1";
+
+        var msgToSend = msg with { Headers = headers };
+
+        // Always bound the commit wait: even when the caller supplies a cancellation token,
+        // apply the ack timeout so a non-responsive server can't block indefinitely.
+        using var cts = BatchPublishHelper.CreateCommitCancellationTokenSource(cancellationToken, _ackTimeout);
+
+        // Request with ack
+        NatsMsg<byte[]> response;
+        try
+        {
+            response = await _js.Connection.RequestAsync<byte[], byte[]>(
+                msgToSend.Subject,
+                msgToSend.Data,
+                headers: msgToSend.Headers,
+                cancellationToken: cts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException($"Batch commit ack failed: timeout after {_ackTimeout}");
+        }
+
+        var batchResponse = BatchPublishHelper.DeserializeAckResponse(response.Data);
+
+        if (batchResponse?.Error != null)
+        {
+            BatchPublishHelper.ThrowBatchPublishException(batchResponse.Error);
+        }
+
+        if (batchResponse == null ||
+            string.IsNullOrEmpty(batchResponse.Stream) ||
+            batchResponse.BatchId != batchId ||
+            batchResponse.BatchSize != currentSeq)
+        {
+            throw new NatsJSInvalidBatchAckException();
+        }
+
+        return new NatsJSBatchAck
+        {
+            Stream = batchResponse.Stream!,
+            Sequence = batchResponse.Seq,
+            Domain = batchResponse.Domain,
+            Value = batchResponse.Value,
+            BatchId = batchResponse.BatchId!,
+            BatchSize = batchResponse.BatchSize,
+        };
+    }
+
+    /// <inheritdoc />
+    public void Discard()
+    {
+        lock (_lock)
+        {
+            if (_closed)
+            {
+                throw new NatsJSBatchClosedException();
+            }
+
+            _closed = true;
+        }
+    }
+
+    /// <summary>
+    /// Closes the batch publisher locally. Equivalent to <see cref="Discard"/> when called on an
+    /// uncommitted batch: messages already sent with <see cref="AddAsync"/> or <see cref="AddMsgAsync"/>
+    /// remain as an incomplete batch on the server until the server's batch timeout expires and
+    /// the in-progress messages are garbage collected. To finalize a batch explicitly, call
+    /// <see cref="CommitAsync"/> or <see cref="CommitMsgAsync"/> before disposal.
+    /// </summary>
+    /// <returns>A completed <see cref="ValueTask"/>.</returns>
+    public ValueTask DisposeAsync()
+    {
+        lock (_lock)
+        {
+            if (!_closed)
+            {
+                _closed = true;
+            }
+        }
+
+        return default;
+    }
+
+    private void CloseOnError()
+    {
+        lock (_lock)
+        {
+            _closed = true;
+        }
+    }
+}
