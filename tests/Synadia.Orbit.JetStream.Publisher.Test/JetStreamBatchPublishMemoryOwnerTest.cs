@@ -1,6 +1,7 @@
 // Copyright (c) Synadia Communications, Inc. All rights reserved.
 // Licensed under the Apache License, Version 2.0.
 
+using System.Buffers;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
@@ -158,6 +159,34 @@ public class JetStreamBatchPublishMemoryOwnerTest
         Assert.Equal(2L, stream.Info.State.Messages);
     }
 
+    [Fact]
+    public async Task Memory_owner_disposed_when_batch_already_closed()
+    {
+        // Regression: pooled buffers transferred to the publisher must be disposed even when
+        // the call throws before reaching the wire (closed batch, invalid opts).
+        await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 12), $"Server version {connection.ServerInfo?.Version} does not support batch publish (requires 2.12+)");
+
+        var js = connection.CreateJetStreamContext();
+        var ct = TestContext.Current.CancellationToken;
+
+        await using var batch = new NatsJSBatchPublisher(js);
+        batch.Discard();
+
+        var pool = new TrackingArrayPool<byte>();
+
+        var addOwner = NatsMemoryOwner<byte>.Allocate(8, pool);
+        await Assert.ThrowsAsync<NatsJSBatchClosedException>(
+            async () => await batch.AddAsync("subj", addOwner, cancellationToken: ct));
+
+        var commitOwner = NatsMemoryOwner<byte>.Allocate(8, pool);
+        await Assert.ThrowsAsync<NatsJSBatchClosedException>(
+            async () => await batch.CommitAsync("subj", commitOwner, cancellationToken: ct));
+
+        Assert.Equal(2, pool.ReturnCount);
+    }
+
     private static NatsMemoryOwner<byte> AllocateOwner(ReadOnlySpan<byte> data)
     {
         var owner = NatsMemoryOwner<byte>.Allocate(data.Length);
@@ -167,4 +196,20 @@ public class JetStreamBatchPublishMemoryOwnerTest
 
     private static NatsMemoryOwner<byte> AllocateOwner(string text)
         => AllocateOwner(System.Text.Encoding.UTF8.GetBytes(text));
+
+    private sealed class TrackingArrayPool<T> : ArrayPool<T>
+    {
+        private readonly ArrayPool<T> _inner = ArrayPool<T>.Shared;
+        private int _returnCount;
+
+        public int ReturnCount => Volatile.Read(ref _returnCount);
+
+        public override T[] Rent(int minimumLength) => _inner.Rent(minimumLength);
+
+        public override void Return(T[] array, bool clearArray = false)
+        {
+            Interlocked.Increment(ref _returnCount);
+            _inner.Return(array, clearArray);
+        }
+    }
 }
