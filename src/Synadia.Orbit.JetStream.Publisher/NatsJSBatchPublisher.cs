@@ -10,8 +10,8 @@ namespace Synadia.Orbit.JetStream.Publisher;
 /// Implementation of batch publisher for publishing messages to a stream in batches.
 /// </summary>
 /// <remarks>
-/// This class is not thread-safe. <see cref="AddAsync"/> and <see cref="AddMsgAsync"/> must be
-/// called sequentially by a single producer: concurrent calls can reach the socket in an order
+/// This class is not thread-safe. <c>AddAsync</c> and <c>AddMsgAsync</c> must be called
+/// sequentially by a single producer: concurrent calls can reach the socket in an order
 /// different from the one in which sequence numbers were assigned, and the server will reject
 /// out-of-order sequences.
 /// </remarks>
@@ -74,7 +74,90 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
     }
 
     /// <inheritdoc />
-    public async Task AddMsgAsync(NatsMsg<byte[]> msg, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
+    public Task AddAsync(string subject, NatsMemoryOwner<byte> data, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
+    {
+        var msg = new NatsMsg<NatsMemoryOwner<byte>>
+        {
+            Subject = subject,
+            Data = data,
+        };
+        return AddMsgAsync(msg, opts, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public Task AddMsgAsync(NatsMsg<byte[]> msg, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
+        => AddMsgInternalAsync(msg, opts, cancellationToken);
+
+    /// <inheritdoc />
+    public Task AddMsgAsync(NatsMsg<NatsMemoryOwner<byte>> msg, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
+        => AddMsgInternalAsync(msg, opts, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<NatsJSBatchAck> CommitAsync(string subject, byte[] data, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
+    {
+        var msg = new NatsMsg<byte[]>
+        {
+            Subject = subject,
+            Data = data,
+        };
+        return CommitMsgAsync(msg, opts, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public Task<NatsJSBatchAck> CommitAsync(string subject, NatsMemoryOwner<byte> data, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
+    {
+        var msg = new NatsMsg<NatsMemoryOwner<byte>>
+        {
+            Subject = subject,
+            Data = data,
+        };
+        return CommitMsgAsync(msg, opts, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public Task<NatsJSBatchAck> CommitMsgAsync(NatsMsg<byte[]> msg, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
+        => CommitMsgInternalAsync(msg, opts, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<NatsJSBatchAck> CommitMsgAsync(NatsMsg<NatsMemoryOwner<byte>> msg, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
+        => CommitMsgInternalAsync(msg, opts, cancellationToken);
+
+    /// <inheritdoc />
+    public void Discard()
+    {
+        lock (_lock)
+        {
+            if (_closed)
+            {
+                throw new NatsJSBatchClosedException();
+            }
+
+            _closed = true;
+        }
+    }
+
+    /// <summary>
+    /// Closes the batch publisher locally. Equivalent to <see cref="Discard"/> when called on an
+    /// uncommitted batch: messages already sent with <c>AddAsync</c> or <c>AddMsgAsync</c>
+    /// remain as an incomplete batch on the server until the server's batch timeout expires and
+    /// the in-progress messages are garbage collected. To finalize a batch explicitly, call
+    /// <c>CommitAsync</c> or <c>CommitMsgAsync</c> before disposal.
+    /// </summary>
+    /// <returns>A completed <see cref="ValueTask"/>.</returns>
+    public ValueTask DisposeAsync()
+    {
+        lock (_lock)
+        {
+            if (!_closed)
+            {
+                _closed = true;
+            }
+        }
+
+        return default;
+    }
+
+    private async Task AddMsgInternalAsync<T>(NatsMsg<T> msg, NatsJSBatchMsgOpts? opts, CancellationToken cancellationToken)
     {
         // Prepare headers on a fresh instance so we don't mutate the caller's NatsHeaders.
         // Validate opts before touching _sequence so a thrown ArgumentException doesn't leave a gap.
@@ -114,7 +197,7 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
         // If we don't need an ack, use core NATS publish
         if (!needsAck)
         {
-            await _js.Connection.PublishAsync(msgToSend.Subject, msgToSend.Data, headers: msgToSend.Headers, cancellationToken: cancellationToken).ConfigureAwait(false);
+            await _js.Connection.PublishAsync<T>(msgToSend.Subject, msgToSend.Data!, headers: msgToSend.Headers, cancellationToken: cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -127,7 +210,7 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
         NatsMsg<byte[]> response;
         try
         {
-            response = await _js.Connection.RequestAsync<byte[], byte[]>(
+            response = await _js.Connection.RequestAsync<T, byte[]>(
                 msgToSend.Subject,
                 msgToSend.Data,
                 headers: msgToSend.Headers,
@@ -167,19 +250,7 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
         }
     }
 
-    /// <inheritdoc />
-    public Task<NatsJSBatchAck> CommitAsync(string subject, byte[] data, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
-    {
-        var msg = new NatsMsg<byte[]>
-        {
-            Subject = subject,
-            Data = data,
-        };
-        return CommitMsgAsync(msg, opts, cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public async Task<NatsJSBatchAck> CommitMsgAsync(NatsMsg<byte[]> msg, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
+    private async Task<NatsJSBatchAck> CommitMsgInternalAsync<T>(NatsMsg<T> msg, NatsJSBatchMsgOpts? opts, CancellationToken cancellationToken)
     {
         // Prepare headers on a fresh instance so we don't mutate the caller's NatsHeaders.
         // Validate opts before touching _sequence so a thrown ArgumentException doesn't close the batch.
@@ -217,7 +288,7 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
         NatsMsg<byte[]> response;
         try
         {
-            response = await _js.Connection.RequestAsync<byte[], byte[]>(
+            response = await _js.Connection.RequestAsync<T, byte[]>(
                 msgToSend.Subject,
                 msgToSend.Data,
                 headers: msgToSend.Headers,
@@ -252,41 +323,6 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
             BatchId = batchResponse.BatchId!,
             BatchSize = batchResponse.BatchSize,
         };
-    }
-
-    /// <inheritdoc />
-    public void Discard()
-    {
-        lock (_lock)
-        {
-            if (_closed)
-            {
-                throw new NatsJSBatchClosedException();
-            }
-
-            _closed = true;
-        }
-    }
-
-    /// <summary>
-    /// Closes the batch publisher locally. Equivalent to <see cref="Discard"/> when called on an
-    /// uncommitted batch: messages already sent with <see cref="AddAsync"/> or <see cref="AddMsgAsync"/>
-    /// remain as an incomplete batch on the server until the server's batch timeout expires and
-    /// the in-progress messages are garbage collected. To finalize a batch explicitly, call
-    /// <see cref="CommitAsync"/> or <see cref="CommitMsgAsync"/> before disposal.
-    /// </summary>
-    /// <returns>A completed <see cref="ValueTask"/>.</returns>
-    public ValueTask DisposeAsync()
-    {
-        lock (_lock)
-        {
-            if (!_closed)
-            {
-                _closed = true;
-            }
-        }
-
-        return default;
     }
 
     private void CloseOnError()

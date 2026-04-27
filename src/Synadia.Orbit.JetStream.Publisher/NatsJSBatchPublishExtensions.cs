@@ -39,4 +39,33 @@ public static class NatsJSBatchPublishExtensions
 
         return await publisher.CommitMsgAsync(messages[messages.Count - 1], cancellationToken: cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Publishes a batch of messages backed by pooled buffers to a Stream and waits for an ack for the commit.
+    /// </summary>
+    /// <param name="js">The JetStream context to use for publishing.</param>
+    /// <param name="messages">The messages to publish as a batch. Ownership of each message's <see cref="NatsMsg{T}.Data"/> transfers to the publisher: each buffer is disposed after its bytes are written to the wire.</param>
+    /// <param name="flowControl">Optional flow control configuration.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>The batch acknowledgment from the server.</returns>
+    public static async Task<NatsJSBatchAck> PublishMsgBatchAsync(
+        this INatsJSContext js,
+        IReadOnlyList<NatsMsg<NatsMemoryOwner<byte>>> messages,
+        NatsJSBatchFlowControl? flowControl = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (messages.Count == 0)
+        {
+            throw new ArgumentException("No messages to publish", nameof(messages));
+        }
+
+        await using var publisher = new NatsJSBatchPublisher(js, flowControl);
+
+        for (int i = 0; i < messages.Count - 1; i++)
+        {
+            await publisher.AddMsgAsync(messages[i], cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+
+        return await publisher.CommitMsgAsync(messages[messages.Count - 1], cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
 }
