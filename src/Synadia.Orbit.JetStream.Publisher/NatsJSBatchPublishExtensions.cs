@@ -16,7 +16,7 @@ public static class NatsJSBatchPublishExtensions
     /// </summary>
     /// <typeparam name="T">The payload type. Resolved by the configured serializer or by an explicit <paramref name="serializer"/>.</typeparam>
     /// <param name="js">The JetStream context to use for publishing.</param>
-    /// <param name="messages">The messages to publish as a batch. If a message's <see cref="NatsMsg{T}.Data"/> implements <see cref="IDisposable"/> (e.g. <see cref="NatsMemoryOwner{T}"/> or any <see cref="System.Buffers.IMemoryOwner{T}"/>), ownership transfers to the publisher: each buffer is disposed after its bytes are written to the wire, or on any pre-publish throw.</param>
+    /// <param name="messages">The messages to publish as a batch. See remarks on <see cref="INatsJSBatchPublisher"/> for ownership semantics.</param>
     /// <param name="flowControl">Optional flow control configuration.</param>
     /// <param name="serializer">Optional serializer for the payloads. When null, the connection's registered serializer is used.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>

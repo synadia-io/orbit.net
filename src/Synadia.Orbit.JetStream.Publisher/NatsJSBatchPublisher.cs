@@ -129,15 +129,12 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
 
     private async Task AddMsgInternalAsync<T>(NatsMsg<T> msg, NatsJSBatchMsgOpts? opts, INatsSerialize<T>? serializer, CancellationToken cancellationToken)
     {
-        // For pooled-buffer payloads (NatsMemoryOwner<byte> et al.) the serializer disposes
-        // the buffer inside PublishAsync/RequestAsync. Capture it here so we can dispose it on
-        // any throw before those calls (closed batch, invalid opts) and honour the
-        // ownership-transfer contract.
+        // Capture any IDisposable payload up front so we can dispose it on a pre-publish throw
+        // (closed batch, invalid opts). The serializer disposes it once the bytes are written.
         var owned = msg.Data as IDisposable;
         try
         {
-            // Prepare headers on a fresh instance so we don't mutate the caller's NatsHeaders.
-            // Validate opts before touching _sequence so a thrown ArgumentException doesn't leave a gap.
+            // Apply opts before taking _sequence so a thrown ArgumentException doesn't leave a gap.
             var headers = BatchPublishHelper.CloneHeaders(msg.Headers);
             BatchPublishHelper.ApplyBatchMessageOptions(headers, opts);
 
@@ -154,16 +151,8 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
                 _sequence++;
                 currentSeq = _sequence;
 
-                // Determine if we need flow control for this message
-                needsAck = false;
-                if (_flowControl.AckFirst && currentSeq == 1)
-                {
-                    needsAck = true; // wait on first message
-                }
-                else if (_flowControl.AckEvery > 0 && currentSeq % _flowControl.AckEvery == 0)
-                {
-                    needsAck = true; // periodic flow control
-                }
+                needsAck = (_flowControl.AckFirst && currentSeq == 1)
+                    || (_flowControl.AckEvery > 0 && currentSeq % _flowControl.AckEvery == 0);
             }
 
             headers[NatsJSBatchHeaders.BatchId] = _batchId;
@@ -171,15 +160,14 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
 
             var msgToSend = msg with { Headers = headers };
 
-            // If we don't need an ack, use core NATS publish
             if (!needsAck)
             {
-                owned = null; // ownership passes to PublishAsync's serializer
+                owned = null;
                 await _js.Connection.PublishAsync<T>(msgToSend.Subject, msgToSend.Data!, headers: msgToSend.Headers, serializer: serializer, cancellationToken: cancellationToken).ConfigureAwait(false);
                 return;
             }
 
-            // Request with ack. Only allocate a linked CTS when the caller actually has a cancellable token.
+            // Only allocate a linked CTS when the caller actually has a cancellable token.
             using var cts = cancellationToken.CanBeCanceled
                 ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
                 : new CancellationTokenSource();
@@ -188,7 +176,7 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
             NatsMsg<byte[]> response;
             try
             {
-                owned = null; // ownership passes to RequestAsync's serializer
+                owned = null;
                 response = await _js.Connection.RequestAsync<T, byte[]>(
                     msgToSend.Subject,
                     msgToSend.Data,
@@ -198,13 +186,12 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
-                // Timed out waiting for the flow-control ack. The batch is effectively dead on
-                // the server; close locally so further Add/Commit calls fail fast.
+                // Batch is dead on the server after an ack timeout; close locally so further
+                // Add/Commit calls fail fast.
                 CloseOnError();
                 throw new TimeoutException($"Batch message {currentSeq} ack failed: timeout after {_ackTimeout}");
             }
 
-            // For flow control we expect no response data or an error
             if (response.Data?.Length > 0)
             {
                 BatchPublishApiResponse? apiResponse;
@@ -214,16 +201,16 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
                 }
                 catch (System.Text.Json.JsonException)
                 {
-                    // Malformed server response. The message was sent and the sequence advanced,
-                    // so the batch is now in an unrecoverable state.
+                    // Message was sent and the sequence advanced; a malformed response leaves
+                    // the batch unrecoverable.
                     CloseOnError();
                     throw;
                 }
 
                 if (apiResponse?.Error != null)
                 {
-                    // Server rejected the batch. Close locally so further Add/Commit calls fail fast
-                    // instead of silently targeting a dead batch.
+                    // Close locally so further Add/Commit calls fail fast instead of silently
+                    // targeting a server-rejected batch.
                     CloseOnError();
                     BatchPublishHelper.ThrowBatchPublishException(apiResponse.Error);
                 }
@@ -238,12 +225,10 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
 
     private async Task<NatsJSBatchAck> CommitMsgInternalAsync<T>(NatsMsg<T> msg, NatsJSBatchMsgOpts? opts, INatsSerialize<T>? serializer, CancellationToken cancellationToken)
     {
-        // See AddMsgInternalAsync for why we capture the IDisposable up front.
         var owned = msg.Data as IDisposable;
         try
         {
-            // Prepare headers on a fresh instance so we don't mutate the caller's NatsHeaders.
-            // Validate opts before touching _sequence so a thrown ArgumentException doesn't close the batch.
+            // Apply opts before taking _sequence so a thrown ArgumentException doesn't close the batch.
             var headers = BatchPublishHelper.CloneHeaders(msg.Headers);
             BatchPublishHelper.ApplyBatchMessageOptions(headers, opts);
 
@@ -257,7 +242,7 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
                     throw new NatsJSBatchClosedException();
                 }
 
-                // Close the batch up-front so concurrent commits can't both send.
+                // Close up-front so concurrent commits can't both send.
                 _closed = true;
                 _sequence++;
                 currentSeq = _sequence;
@@ -270,15 +255,14 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
 
             var msgToSend = msg with { Headers = headers };
 
-            // Always bound the commit wait: even when the caller supplies a cancellation token,
-            // apply the ack timeout so a non-responsive server can't block indefinitely.
+            // Always bound the commit wait so a non-responsive server can't block indefinitely,
+            // even when the caller supplies a cancellation token.
             using var cts = BatchPublishHelper.CreateCommitCancellationTokenSource(cancellationToken, _ackTimeout);
 
-            // Request with ack
             NatsMsg<byte[]> response;
             try
             {
-                owned = null; // ownership passes to RequestAsync's serializer
+                owned = null;
                 response = await _js.Connection.RequestAsync<T, byte[]>(
                     msgToSend.Subject,
                     msgToSend.Data,
