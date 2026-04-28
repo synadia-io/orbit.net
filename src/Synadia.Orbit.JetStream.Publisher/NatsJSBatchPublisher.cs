@@ -63,64 +63,34 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
     }
 
     /// <inheritdoc />
-    public Task AddAsync(string subject, byte[] data, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
+    public Task AddAsync<T>(string subject, T data, NatsJSBatchMsgOpts? opts = null, INatsSerialize<T>? serializer = null, CancellationToken cancellationToken = default)
     {
-        var msg = new NatsMsg<byte[]>
+        var msg = new NatsMsg<T>
         {
             Subject = subject,
             Data = data,
         };
-        return AddMsgAsync(msg, opts, cancellationToken);
+        return AddMsgInternalAsync(msg, opts, serializer, cancellationToken);
     }
 
     /// <inheritdoc />
-    public Task AddAsync(string subject, NatsMemoryOwner<byte> data, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
+    public Task AddMsgAsync<T>(NatsMsg<T> msg, NatsJSBatchMsgOpts? opts = null, INatsSerialize<T>? serializer = null, CancellationToken cancellationToken = default)
+        => AddMsgInternalAsync(msg, opts, serializer, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<NatsJSBatchAck> CommitAsync<T>(string subject, T data, NatsJSBatchMsgOpts? opts = null, INatsSerialize<T>? serializer = null, CancellationToken cancellationToken = default)
     {
-        var msg = new NatsMsg<NatsMemoryOwner<byte>>
+        var msg = new NatsMsg<T>
         {
             Subject = subject,
             Data = data,
         };
-        return AddMsgAsync(msg, opts, cancellationToken);
+        return CommitMsgInternalAsync(msg, opts, serializer, cancellationToken);
     }
 
     /// <inheritdoc />
-    public Task AddMsgAsync(NatsMsg<byte[]> msg, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
-        => AddMsgInternalAsync(msg, opts, cancellationToken);
-
-    /// <inheritdoc />
-    public Task AddMsgAsync(NatsMsg<NatsMemoryOwner<byte>> msg, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
-        => AddMsgInternalAsync(msg, opts, cancellationToken);
-
-    /// <inheritdoc />
-    public Task<NatsJSBatchAck> CommitAsync(string subject, byte[] data, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
-    {
-        var msg = new NatsMsg<byte[]>
-        {
-            Subject = subject,
-            Data = data,
-        };
-        return CommitMsgAsync(msg, opts, cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public Task<NatsJSBatchAck> CommitAsync(string subject, NatsMemoryOwner<byte> data, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
-    {
-        var msg = new NatsMsg<NatsMemoryOwner<byte>>
-        {
-            Subject = subject,
-            Data = data,
-        };
-        return CommitMsgAsync(msg, opts, cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public Task<NatsJSBatchAck> CommitMsgAsync(NatsMsg<byte[]> msg, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
-        => CommitMsgInternalAsync(msg, opts, cancellationToken);
-
-    /// <inheritdoc />
-    public Task<NatsJSBatchAck> CommitMsgAsync(NatsMsg<NatsMemoryOwner<byte>> msg, NatsJSBatchMsgOpts? opts = null, CancellationToken cancellationToken = default)
-        => CommitMsgInternalAsync(msg, opts, cancellationToken);
+    public Task<NatsJSBatchAck> CommitMsgAsync<T>(NatsMsg<T> msg, NatsJSBatchMsgOpts? opts = null, INatsSerialize<T>? serializer = null, CancellationToken cancellationToken = default)
+        => CommitMsgInternalAsync(msg, opts, serializer, cancellationToken);
 
     /// <inheritdoc />
     public void Discard()
@@ -157,9 +127,9 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
         return default;
     }
 
-    private async Task AddMsgInternalAsync<T>(NatsMsg<T> msg, NatsJSBatchMsgOpts? opts, CancellationToken cancellationToken)
+    private async Task AddMsgInternalAsync<T>(NatsMsg<T> msg, NatsJSBatchMsgOpts? opts, INatsSerialize<T>? serializer, CancellationToken cancellationToken)
     {
-        // For pooled-buffer payloads (NatsMemoryOwner<byte> et al.) NatsRawSerializer disposes
+        // For pooled-buffer payloads (NatsMemoryOwner<byte> et al.) the serializer disposes
         // the buffer inside PublishAsync/RequestAsync. Capture it here so we can dispose it on
         // any throw before those calls (closed batch, invalid opts) and honour the
         // ownership-transfer contract.
@@ -205,7 +175,7 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
             if (!needsAck)
             {
                 owned = null; // ownership passes to PublishAsync's serializer
-                await _js.Connection.PublishAsync<T>(msgToSend.Subject, msgToSend.Data!, headers: msgToSend.Headers, cancellationToken: cancellationToken).ConfigureAwait(false);
+                await _js.Connection.PublishAsync<T>(msgToSend.Subject, msgToSend.Data!, headers: msgToSend.Headers, serializer: serializer, cancellationToken: cancellationToken).ConfigureAwait(false);
                 return;
             }
 
@@ -223,6 +193,7 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
                     msgToSend.Subject,
                     msgToSend.Data,
                     headers: msgToSend.Headers,
+                    requestSerializer: serializer,
                     cancellationToken: cts.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -265,7 +236,7 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
         }
     }
 
-    private async Task<NatsJSBatchAck> CommitMsgInternalAsync<T>(NatsMsg<T> msg, NatsJSBatchMsgOpts? opts, CancellationToken cancellationToken)
+    private async Task<NatsJSBatchAck> CommitMsgInternalAsync<T>(NatsMsg<T> msg, NatsJSBatchMsgOpts? opts, INatsSerialize<T>? serializer, CancellationToken cancellationToken)
     {
         // See AddMsgInternalAsync for why we capture the IDisposable up front.
         var owned = msg.Data as IDisposable;
@@ -312,6 +283,7 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
                     msgToSend.Subject,
                     msgToSend.Data,
                     headers: msgToSend.Headers,
+                    requestSerializer: serializer,
                     cancellationToken: cts.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
