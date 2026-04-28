@@ -5,15 +5,16 @@
   <img src="orbit-small.png">
 </p>
 
-Orbit .NET is a set of independent NuGet packages that build on NATS .NET.
-Each package solves one problem the core client doesn't:
+Orbit .NET is a set of independent NuGet packages that build on [NATS .NET](https://github.com/nats-io/nats.net).
+Each one solves a problem the core client doesn't cover:
 
-- JetStream: backpressure publisher, batch retrieval, scheduled messages
-- Consumers: partitioned consumer groups (static and elastic)
-- Core: request-many with sentinel, distributed counters
-- KV: key encoding codecs
-- Tooling: CLI context loader, plugin framework, parameterized subjects
-- Testing: NATS server process manager
+- **Scaling consumers across instances?** -> Partitioned consumer groups with auto-balancing and self-healing
+- **Publishing at high throughput?** -> Pipelined ack publisher + atomic batch commits
+- **Need delayed or scheduled delivery?** -> Schedule messages for future publish on JetStream
+- **Distributed counters without a separate store?** -> Atomic inc/dec backed by JetStream streams
+- **KV keys with special characters?** -> Base64 and path-style key codecs
+- **Sharing NATS CLI context with your app?** -> Read `~/.config/nats/context/` files into `NatsOpts`
+- **Integration testing?** -> Spin up `nats-server` with auto port assignment and JetStream
 
 Use what you need. APIs may change until a package reaches v1.0.0.
 
