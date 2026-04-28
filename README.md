@@ -5,10 +5,17 @@
   <img src="orbit-small.png">
 </p>
 
-Orbit .NET is a set of independent utilities around NATS ecosystem that aims to
-boost productivity and provide higher abstraction layer for NATS .NET
-clients. Note that these libraries will evolve rapidly and API guarantees are
-not made until the specific project has a v1.0.0 version.
+Orbit .NET is a set of independent NuGet packages that build on NATS .NET.
+Each package solves one problem the core client doesn't:
+
+- JetStream: backpressure publisher, batch retrieval, scheduled messages
+- Consumers: partitioned consumer groups (static and elastic)
+- Core: request-many with sentinel, distributed counters
+- KV: key encoding codecs
+- Tooling: CLI context loader, plugin framework, parameterized subjects
+- Testing: NATS server process manager
+
+Use what you need. APIs may change until a package reaches v1.0.0.
 
 # Packages
 
