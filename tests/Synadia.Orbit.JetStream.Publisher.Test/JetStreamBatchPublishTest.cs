@@ -120,7 +120,7 @@ public class JetStreamBatchPublishTest
             $"{subject}.1",
             "message 1"u8.ToArray(),
             new NatsJSBatchMsgOpts { LastSeq = 5, Stream = streamName },
-            ct);
+            cancellationToken: ct);
 
         // Add second message with expected stream
         await batch.AddMsgAsync(
@@ -130,7 +130,7 @@ public class JetStreamBatchPublishTest
                 Data = "message 2"u8.ToArray(),
             },
             new NatsJSBatchMsgOpts { Stream = streamName },
-            ct);
+            cancellationToken: ct);
 
         // Commit third message
         var ack = await batch.CommitAsync($"{subject}.3", "message 3"u8.ToArray(), cancellationToken: ct);
@@ -168,7 +168,7 @@ public class JetStreamBatchPublishTest
             $"{subject}.1",
             "message 1"u8.ToArray(),
             new NatsJSBatchMsgOpts { LastSeq = 0 },
-            ct);
+            cancellationToken: ct);
 
         var ack = await batch.CommitAsync($"{subject}.2", "message 2"u8.ToArray(), cancellationToken: ct);
 
@@ -202,7 +202,7 @@ public class JetStreamBatchPublishTest
                 $"{subject}.1",
                 "message 1"u8.ToArray(),
                 new NatsJSBatchMsgOpts { LastSeq = 5 },
-                ct));
+                cancellationToken: ct));
 
         _output.WriteLine($"Exception: {ex.Message}");
     }
