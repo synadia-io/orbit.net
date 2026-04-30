@@ -265,6 +265,143 @@ public class SchedulingExtensionsTest
     }
 
     [Fact]
+    public void NatsMsgSchedule_cron_factory_sets_raw_pattern()
+    {
+        var schedule = NatsMsgSchedule.Cron("0 0 * * * *", "events.target");
+
+        var headers = schedule.ToHeaders();
+
+        Assert.Equal("0 0 * * * *", headers["Nats-Schedule"]);
+        Assert.Equal("events.target", headers["Nats-Schedule-Target"]);
+        Assert.Null(schedule.ScheduleAt);
+        Assert.Null(schedule.Interval);
+    }
+
+    [Theory]
+    [InlineData("Yearly", "@yearly")]
+    [InlineData("Monthly", "@monthly")]
+    [InlineData("Weekly", "@weekly")]
+    [InlineData("Daily", "@daily")]
+    [InlineData("Hourly", "@hourly")]
+    public void NatsMsgSchedule_predefined_factory_sets_pattern(string factory, string expected)
+    {
+        NatsMsgSchedule schedule = factory switch
+        {
+            "Yearly" => NatsMsgSchedule.Yearly("events.target"),
+            "Monthly" => NatsMsgSchedule.Monthly("events.target"),
+            "Weekly" => NatsMsgSchedule.Weekly("events.target"),
+            "Daily" => NatsMsgSchedule.Daily("events.target"),
+            "Hourly" => NatsMsgSchedule.Hourly("events.target"),
+            _ => throw new ArgumentOutOfRangeException(nameof(factory)),
+        };
+
+        Assert.Equal(expected, schedule.ToHeaders()["Nats-Schedule"]);
+        Assert.Equal("events.target", schedule.Target);
+    }
+
+    [Fact]
+    public void NatsMsgSchedule_timezone_header_is_set_for_cron()
+    {
+        var schedule = NatsMsgSchedule.Hourly("events.target") with { TimeZone = "America/New_York" };
+
+        var headers = schedule.ToHeaders();
+
+        Assert.Equal("@hourly", headers["Nats-Schedule"]);
+        Assert.Equal("America/New_York", headers["Nats-Schedule-Time-Zone"]);
+    }
+
+    [Fact]
+    public void NatsMsgSchedule_timezone_omitted_when_null()
+    {
+        var schedule = NatsMsgSchedule.Hourly("events.target");
+
+        var headers = schedule.ToHeaders();
+
+        Assert.Empty(headers["Nats-Schedule-Time-Zone"].ToArray());
+    }
+
+    [Fact]
+    public void NatsMsgSchedule_timezone_rejected_on_at_schedule()
+    {
+        var schedule = new NatsMsgSchedule(DateTimeOffset.UtcNow.AddMinutes(5), "events.target")
+        {
+            TimeZone = "Europe/Amsterdam",
+        };
+
+        Assert.Throws<InvalidOperationException>(() => schedule.ToHeaders());
+    }
+
+    [Fact]
+    public void NatsMsgSchedule_timezone_rejected_on_every_schedule()
+    {
+        var schedule = new NatsMsgSchedule(TimeSpan.FromMinutes(5), "events.target")
+        {
+            TimeZone = "UTC",
+        };
+
+        Assert.Throws<InvalidOperationException>(() => schedule.ToHeaders());
+    }
+
+    [Fact]
+    public async Task Cron_schedule_should_publish_to_target()
+    {
+        await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await connection.ConnectRetryAsync();
+
+        if (!connection.HasMinServerVersion(2, 14))
+        {
+            _output.WriteLine($"Skipping test - server version {connection.ServerInfo?.Version} does not support cron schedules (requires 2.14+)");
+            return;
+        }
+
+        INatsJSContext js = connection.CreateJetStreamContext();
+        string prefix = _server.GetNextId();
+
+        CancellationToken ct = TestContext.Current.CancellationToken;
+
+        var streamConfig = new StreamConfig($"{prefix}s1", [$"{prefix}foo.*"])
+        {
+            AllowMsgSchedules = true,
+            AllowDirect = true,
+        };
+
+        await js.CreateStreamAsync(streamConfig, ct);
+
+        // Cron expression "* * * * * *" fires every second.
+        var schedule = NatsMsgSchedule.Cron("* * * * * *", $"{prefix}foo.publish");
+
+        var ack = await js.PublishScheduledAsync(
+            $"{prefix}foo.schedule",
+            "cron-payload",
+            schedule,
+            cancellationToken: ct);
+
+        ack.EnsureSuccess();
+
+        var stream = await js.GetStreamAsync($"{prefix}s1", cancellationToken: ct);
+        await WaitUntilAsync(
+            async () =>
+            {
+                await stream.RefreshAsync(ct).ConfigureAwait(false);
+                return stream.Info.State.Messages >= 2;
+            },
+            TimeSpan.FromSeconds(10),
+            ct);
+
+        var msg = await stream.GetDirectAsync<string>(
+            new StreamMsgGetRequest { LastBySubj = $"{prefix}foo.publish" },
+            cancellationToken: ct);
+
+        Assert.Equal("cron-payload", msg.Data);
+        Assert.NotNull(msg.Headers);
+        Assert.Equal($"{prefix}foo.schedule", msg.Headers["Nats-Scheduler"].ToString());
+
+        // Cron schedules carry an RFC3339 timestamp for the next firing (not "purge").
+        Assert.NotEqual("purge", msg.Headers["Nats-Schedule-Next"].ToString());
+        Assert.False(string.IsNullOrEmpty(msg.Headers["Nats-Schedule-Next"].ToString()));
+    }
+
+    [Fact]
     public async Task PublishScheduledAsync_publishes_message_with_schedule_headers()
     {
         // Arrange

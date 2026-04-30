@@ -13,12 +13,12 @@ namespace Synadia.Orbit.JetStream.Extensions.Models;
 /// at a future time to a target subject within the same stream.</para>
 /// <para>Supported schedule types:</para>
 /// <list type="bullet">
-/// <item><c>@at</c> — one-time delivery at a specific time (NATS Server 2.12+)</item>
-/// <item><c>@every</c> — repeating delivery at a fixed interval (NATS Server 2.14+)</item>
+/// <item><c>@at</c>, one-time delivery at a specific time (NATS Server 2.12+)</item>
+/// <item><c>@every</c>, repeating delivery at a fixed interval (NATS Server 2.14+)</item>
+/// <item>Cron expressions and predefined schedules (<c>@hourly</c>, <c>@daily</c>, ...) (NATS Server 2.14+)</item>
 /// </list>
-/// <para>Cron expressions are defined in <see href="https://github.com/nats-io/nats-architecture-and-design/blob/main/adr/ADR-51.md">ADR-51</see>
-/// but not yet implemented in the server. Use the <see cref="NatsMsgSchedule(string, string)"/> constructor
-/// for forward compatibility with future schedule types.</para>
+/// <para>See <see href="https://github.com/nats-io/nats-architecture-and-design/blob/main/adr/ADR-51.md">ADR-51</see>
+/// for the full schedule specification.</para>
 /// </remarks>
 public record NatsMsgSchedule
 {
@@ -26,6 +26,7 @@ public record NatsMsgSchedule
     private const string NatsScheduleTargetHeader = "Nats-Schedule-Target";
     private const string NatsScheduleSourceHeader = "Nats-Schedule-Source";
     private const string NatsScheduleTtlHeader = "Nats-Schedule-TTL";
+    private const string NatsScheduleTimeZoneHeader = "Nats-Schedule-Time-Zone";
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NatsMsgSchedule"/> class with a one-time <c>@at</c> schedule.
@@ -81,10 +82,12 @@ public record NatsMsgSchedule
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NatsMsgSchedule"/> class with a raw schedule expression.
-    /// Use this constructor for forward compatibility with future schedule types (e.g. cron expressions).
+    /// Accepts cron expressions, predefined schedules (<c>@hourly</c>, <c>@daily</c>, ...),
+    /// or any other schedule string the server understands.
     /// </summary>
-    /// <param name="schedule">The schedule expression. Currently the server supports <c>@at</c> (2.12+)
-    /// and <c>@every</c> (2.14+). Cron expressions are planned but not yet implemented server-side.</param>
+    /// <param name="schedule">The schedule expression. Supported forms: <c>@at &lt;rfc3339&gt;</c> (2.12+),
+    /// <c>@every &lt;duration&gt;</c> (2.14+), 6-field cron (<c>"0 0 * * * *"</c>) (2.14+),
+    /// or predefined schedules <c>@yearly</c>/<c>@annually</c>/<c>@monthly</c>/<c>@weekly</c>/<c>@daily</c>/<c>@midnight</c>/<c>@hourly</c> (2.14+).</param>
     /// <param name="target">The target subject for message delivery.</param>
     /// <exception cref="ArgumentException">Thrown when schedule or target is null or whitespace.</exception>
     public NatsMsgSchedule(string schedule, string target)
@@ -117,8 +120,8 @@ public record NatsMsgSchedule
     /// Gets the raw schedule expression.
     /// </summary>
     /// <remarks>
-    /// Currently supported by the server: <c>@at</c> (2.12+) and <c>@every</c> (2.14+).
-    /// Cron expressions are planned in ADR-51 but not yet implemented server-side.
+    /// Server-supported forms: <c>@at</c> (2.12+), <c>@every</c> (2.14+), 6-field cron expressions (2.14+),
+    /// and predefined schedules <c>@yearly</c>/<c>@annually</c>/<c>@monthly</c>/<c>@weekly</c>/<c>@daily</c>/<c>@midnight</c>/<c>@hourly</c> (2.14+).
     /// </remarks>
     public string Schedule { get; }
 
@@ -152,11 +155,59 @@ public record NatsMsgSchedule
     public string? Source { get; init; }
 
     /// <summary>
+    /// Gets the optional time zone for cron schedules. Requires NATS Server 2.14 or later.
+    /// </summary>
+    /// <remarks>
+    /// Accepted values are those Go's <c>time.LoadLocation()</c> understands: an IANA Time Zone database name
+    /// (<c>America/New_York</c>, <c>Europe/Amsterdam</c>, <c>Asia/Tokyo</c>), the literal <c>UTC</c>
+    /// (equivalent to omitting the header), or the literal <c>Local</c> (uses the server's local time zone).
+    /// Fixed offsets like <c>+02:00</c> and abbreviations like <c>EST</c> are not accepted.
+    /// Only allowed on cron schedules; setting it together with <c>@at</c> or <c>@every</c> causes
+    /// <see cref="ToHeaders"/> to throw.
+    /// </remarks>
+    public string? TimeZone { get; init; }
+
+    /// <summary>
+    /// Creates a schedule from a cron expression. Requires NATS Server 2.14 or later.
+    /// </summary>
+    /// <param name="cron">A 6-field cron expression (seconds minutes hours day-of-month month day-of-week).
+    /// Example: <c>"0 0 * * * *"</c> for the start of every hour.</param>
+    /// <param name="target">The target subject for message delivery.</param>
+    /// <returns>A new <see cref="NatsMsgSchedule"/> configured with the given cron expression.</returns>
+    public static NatsMsgSchedule Cron(string cron, string target) => new(cron, target);
+
+    /// <summary>Creates a schedule that fires once a year at midnight on January 1st (UTC by default). Requires NATS Server 2.14 or later.</summary>
+    /// <param name="target">The target subject for message delivery.</param>
+    /// <returns>A new <see cref="NatsMsgSchedule"/> configured with <c>@yearly</c>.</returns>
+    public static NatsMsgSchedule Yearly(string target) => new("@yearly", target);
+
+    /// <summary>Creates a schedule that fires once a month at midnight on the first of the month (UTC by default). Requires NATS Server 2.14 or later.</summary>
+    /// <param name="target">The target subject for message delivery.</param>
+    /// <returns>A new <see cref="NatsMsgSchedule"/> configured with <c>@monthly</c>.</returns>
+    public static NatsMsgSchedule Monthly(string target) => new("@monthly", target);
+
+    /// <summary>Creates a schedule that fires once a week at midnight between Saturday and Sunday (UTC by default). Requires NATS Server 2.14 or later.</summary>
+    /// <param name="target">The target subject for message delivery.</param>
+    /// <returns>A new <see cref="NatsMsgSchedule"/> configured with <c>@weekly</c>.</returns>
+    public static NatsMsgSchedule Weekly(string target) => new("@weekly", target);
+
+    /// <summary>Creates a schedule that fires once a day at midnight (UTC by default). Requires NATS Server 2.14 or later.</summary>
+    /// <param name="target">The target subject for message delivery.</param>
+    /// <returns>A new <see cref="NatsMsgSchedule"/> configured with <c>@daily</c>.</returns>
+    public static NatsMsgSchedule Daily(string target) => new("@daily", target);
+
+    /// <summary>Creates a schedule that fires at the start of every hour (UTC by default). Requires NATS Server 2.14 or later.</summary>
+    /// <param name="target">The target subject for message delivery.</param>
+    /// <returns>A new <see cref="NatsMsgSchedule"/> configured with <c>@hourly</c>.</returns>
+    public static NatsMsgSchedule Hourly(string target) => new("@hourly", target);
+
+    /// <summary>
     /// Converts this schedule configuration to NATS headers.
     /// </summary>
     /// <param name="existingHeaders">Optional existing headers to merge with. If null, new headers are created.</param>
     /// <returns>A <see cref="NatsHeaders"/> instance containing the scheduling headers.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <see cref="Ttl"/> is less than 1 second and not <see cref="TimeSpan.MaxValue"/>.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when <see cref="TimeZone"/> is set on a non-cron schedule (<c>@at</c> or <c>@every</c>).</exception>
     public NatsHeaders ToHeaders(NatsHeaders? existingHeaders = null)
     {
         var headers = existingHeaders ?? new NatsHeaders();
@@ -167,6 +218,18 @@ public record NatsMsgSchedule
         if (Source is { } source)
         {
             headers[NatsScheduleSourceHeader] = source;
+        }
+
+        if (TimeZone is { } timeZone)
+        {
+            if (Schedule.StartsWith("@at ", StringComparison.Ordinal) ||
+                Schedule.StartsWith("@every ", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "Nats-Schedule-Time-Zone is only valid on cron schedules; not allowed with @at or @every.");
+            }
+
+            headers[NatsScheduleTimeZoneHeader] = timeZone;
         }
 
         if (Ttl is { } ttl)
