@@ -54,10 +54,8 @@ for the full specification. The stream must have `AllowMsgSchedules = true`.
 | Delayed publish | `NatsMsgSchedule(DateTimeOffset, target)` | null | 2.12+ |
 | Recurring publish | `NatsMsgSchedule(TimeSpan, target)` | null | 2.14+ |
 | Data sampling | `NatsMsgSchedule(TimeSpan, target) { Source = ... }` | set | 2.14+ |
-
-> **Note:** Cron expressions and timezone support are defined in ADR-51 but not yet implemented
-> in the server. The `NatsMsgSchedule(string, string)` raw constructor is available for forward
-> compatibility with future schedule types.
+| Cron schedule | `NatsMsgSchedule.Cron("0 0 * * * *", target)` | null | 2.14+ |
+| Predefined schedule | `NatsMsgSchedule.Hourly(target)` etc. | null | 2.14+ |
 
 ### Delayed Publish (NATS Server 2.12+)
 
@@ -149,6 +147,40 @@ var schedule = new NatsMsgSchedule(DateTimeOffset.UtcNow.AddMinutes(10), "sensor
     Source = "sensors.raw",
 };
 ```
+
+### Cron Schedules (NATS Server 2.14+)
+
+Use a 6-field cron expression (seconds minutes hours day-of-month month day-of-week) or one of the
+predefined factory methods:
+
+```csharp
+// "At minute 0 of every hour"
+var schedule = NatsMsgSchedule.Cron("0 0 * * * *", "events.hourly");
+
+// Or use a predefined factory
+var schedule = NatsMsgSchedule.Hourly("events.hourly");
+
+await js.PublishScheduledAsync("scheduling.hourly", "payload", schedule);
+```
+
+Predefined factories: `Yearly`, `Monthly`, `Weekly`, `Daily`, `Hourly`. Raw aliases `@annually` and
+`@midnight` are also accepted via the string constructor.
+
+Cron schedules evaluate in UTC by default. Set `TimeZone` to an IANA name to evaluate in a specific
+zone:
+
+```csharp
+var schedule = NatsMsgSchedule.Cron("0 0 9 * * 1-5", "events.workday_open")
+{
+    TimeZone = "America/New_York",
+};
+```
+
+Accepted `TimeZone` values: an IANA name (`America/New_York`, `Europe/Amsterdam`, ...), `UTC`, or
+`Local` (server's local time zone). Fixed offsets like `+02:00` and abbreviations like `EST` are
+not accepted. The server resolves IANA names against its host's tzdata, so operators must keep
+tzdata installed and current. Setting `TimeZone` on an `@at` or `@every` schedule throws on
+`ToHeaders()`.
 
 ### TTL Options
 
