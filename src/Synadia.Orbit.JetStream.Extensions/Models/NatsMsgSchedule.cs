@@ -174,7 +174,21 @@ public record NatsMsgSchedule
     /// Example: <c>"0 0 * * * *"</c> for the start of every hour.</param>
     /// <param name="target">The target subject for message delivery.</param>
     /// <returns>A new <see cref="NatsMsgSchedule"/> configured with the given cron expression.</returns>
-    public static NatsMsgSchedule Cron(string cron, string target) => new(cron, target);
+    /// <exception cref="ArgumentException">Thrown when <paramref name="cron"/> starts with <c>@at </c> or <c>@every </c>.
+    /// Use the <see cref="DateTimeOffset"/> or <see cref="TimeSpan"/> constructors for those schedule types.</exception>
+    public static NatsMsgSchedule Cron(string cron, string target)
+    {
+        if (cron is not null &&
+            (cron.StartsWith("@at ", StringComparison.Ordinal) ||
+             cron.StartsWith("@every ", StringComparison.Ordinal)))
+        {
+            throw new ArgumentException(
+                "Cron(...) does not accept @at or @every expressions; use the DateTimeOffset or TimeSpan constructors instead.",
+                nameof(cron));
+        }
+
+        return new(cron!, target);
+    }
 
     /// <summary>Creates a schedule that fires once a year at midnight on January 1st (UTC by default). Requires NATS Server 2.14 or later.</summary>
     /// <param name="target">The target subject for message delivery.</param>
@@ -207,6 +221,7 @@ public record NatsMsgSchedule
     /// <param name="existingHeaders">Optional existing headers to merge with. If null, new headers are created.</param>
     /// <returns>A <see cref="NatsHeaders"/> instance containing the scheduling headers.</returns>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <see cref="Ttl"/> is less than 1 second and not <see cref="TimeSpan.MaxValue"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <see cref="TimeZone"/> is set to an empty or whitespace string.</exception>
     /// <exception cref="InvalidOperationException">Thrown when <see cref="TimeZone"/> is set on a non-cron schedule (<c>@at</c> or <c>@every</c>).</exception>
     public NatsHeaders ToHeaders(NatsHeaders? existingHeaders = null)
     {
@@ -222,6 +237,11 @@ public record NatsMsgSchedule
 
         if (TimeZone is { } timeZone)
         {
+            if (string.IsNullOrWhiteSpace(timeZone))
+            {
+                throw new ArgumentException("TimeZone cannot be empty or whitespace.", nameof(TimeZone));
+            }
+
             if (Schedule.StartsWith("@at ", StringComparison.Ordinal) ||
                 Schedule.StartsWith("@every ", StringComparison.Ordinal))
             {

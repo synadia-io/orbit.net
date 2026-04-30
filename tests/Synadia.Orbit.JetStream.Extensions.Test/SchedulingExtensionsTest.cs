@@ -321,6 +321,23 @@ public class SchedulingExtensionsTest
     }
 
     [Fact]
+    public void NatsMsgSchedule_cron_factory_rejects_at_and_every()
+    {
+        Assert.Throws<ArgumentException>(() => NatsMsgSchedule.Cron("@at 1970-01-01T00:00:00Z", "events.target"));
+        Assert.Throws<ArgumentException>(() => NatsMsgSchedule.Cron("@every 5m", "events.target"));
+    }
+
+    [Fact]
+    public void NatsMsgSchedule_timezone_rejects_empty_or_whitespace()
+    {
+        var emptyTz = NatsMsgSchedule.Hourly("events.target") with { TimeZone = string.Empty };
+        Assert.Throws<ArgumentException>(() => emptyTz.ToHeaders());
+
+        var whitespaceTz = NatsMsgSchedule.Hourly("events.target") with { TimeZone = "   " };
+        Assert.Throws<ArgumentException>(() => whitespaceTz.ToHeaders());
+    }
+
+    [Fact]
     public void NatsMsgSchedule_timezone_rejected_on_at_schedule()
     {
         var schedule = new NatsMsgSchedule(DateTimeOffset.UtcNow.AddMinutes(5), "events.target")
