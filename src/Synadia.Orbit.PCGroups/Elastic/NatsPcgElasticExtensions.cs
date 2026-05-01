@@ -189,6 +189,33 @@ public static class NatsPcgElasticExtensions
     }
 
     /// <summary>
+    /// Deletes a work-queue consumer for an elastic consumer group member.
+    /// </summary>
+    /// <param name="js">JetStream context.</param>
+    /// <param name="streamName">Name of the source stream.</param>
+    /// <param name="consumerGroupName">Name of the consumer group.</param>
+    /// <param name="memberName">Name of the member whose work-queue consumer should be deleted.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public static async Task DeletePcgElasticWorkQueueConsumerAsync(
+        this INatsJSContext js,
+        string streamName,
+        string consumerGroupName,
+        string memberName,
+        CancellationToken cancellationToken = default)
+    {
+        string workQueueStreamName = GetWorkQueueStreamName(streamName, consumerGroupName);
+
+        try
+        {
+            await js.DeleteConsumerAsync(workQueueStreamName, memberName, cancellationToken).ConfigureAwait(false);
+        }
+        catch (NatsJSApiException ex) when (ex.Error.Code == 404)
+        {
+            // Consumer already deleted - ignore
+        }
+    }
+
+    /// <summary>
     /// Lists all elastic consumer groups for a stream.
     /// </summary>
     /// <param name="js">JetStream context.</param>
