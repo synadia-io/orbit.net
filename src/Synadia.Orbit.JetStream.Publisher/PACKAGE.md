@@ -8,6 +8,9 @@ Higher-level publishers for NATS JetStream:
   commit them atomically (all-or-nothing), with optional flow control. Requires NATS
   Server 2.12+ and `AllowAtomicPublish = true` on the stream. See
   [ADR-50](https://github.com/nats-io/nats-architecture-and-design/blob/main/adr/ADR-50.md).
+- **Fast-ingest publisher** (`NatsJSFastPublisher`) — high-throughput batch publishing
+  without atomicity. Server-driven flow control, optional per-message gap reporting.
+  Requires NATS Server 2.14+ and `AllowBatchPublish = true` on the stream.
 
 ## Backpressure Publisher
 
@@ -152,3 +155,56 @@ or a specific subtype per server error code:
 `NatsJSBatchClosedException` is thrown when using a publisher after commit or discard.
 `NatsJSInvalidBatchAckException` is thrown when the server's batch ack response does not
 match the committed batch.
+
+## Fast-Ingest Batch Publishing
+
+`NatsJSFastPublisher` delivers high-throughput batch publishing without atomicity.
+Individual messages may be lost (gaps) and a partial batch may persist. The server
+drives flow control: `AddAsync` / `AddMsgAsync` stalls when the configured outstanding
+ack window is exceeded. Stream message-count limit per batch is unbounded.
+
+```csharp
+// dotnet add package nats.net
+// dotnet add package Synadia.Orbit.JetStream.Publisher
+await using var client = new NatsClient();
+var js = client.CreateJetStreamContext();
+
+await js.CreateStreamAsync(new StreamConfig("METRICS", ["metrics.>"])
+{
+    AllowBatchPublish = true,
+});
+
+await using var batch = js.CreateOrbitFastPublisher();
+
+for (int i = 0; i < 100_000; i++)
+{
+    await batch.AddAsync($"metrics.{i % 16}", $"value-{i}"u8.ToArray());
+}
+
+NatsJSBatchAck ack = await batch.CloseAsync();
+Console.WriteLine($"Persisted {ack.BatchSize} messages to {ack.Stream}");
+```
+
+Use `CommitAsync` / `CommitMsgAsync` to publish a final message and commit, or
+`CloseAsync` to commit without storing a final message (end-of-batch).
+
+### Flow control and gap handling
+
+```csharp
+await using var batch = js.CreateOrbitFastPublisher(new NatsJSFastPublisherOpts
+{
+    ContinueOnGap = true,                            // server reports gaps but keeps going
+    ErrorHandler = ex => Console.WriteLine(ex),       // gaps and per-message errors
+    FlowControl = new NatsJSFastPublishFlowControl
+    {
+        Flow = 200,
+        MaxOutstandingAcks = 4,
+        AckTimeout = TimeSpan.FromSeconds(5),
+    },
+});
+```
+
+When `ContinueOnGap` is false (default) the server abandons the batch on the first
+gap. When true, gaps surface via `ErrorHandler` as `NatsJSFastPublishGapException`
+and the batch continues. Per-message server errors arrive as
+`NatsJSFastPublishMessageException`.
