@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0.
 
 #pragma warning disable SA1600 // Elements should be documented (internal types)
+#pragma warning disable SA1402 // File may only contain a single type
 
 using System.Text.Json.Serialization;
 
@@ -15,13 +16,8 @@ namespace Synadia.Orbit.JetStream.Publisher;
 [JsonSerializable(typeof(FastPublishErrResponse))]
 internal partial class FastPublishJsonSerializerContext : JsonSerializerContext;
 
-#pragma warning disable SA1402
-
 internal record FastPublishFlowAckResponse
 {
-    [JsonPropertyName("type")]
-    public string? Type { get; init; }
-
     [JsonPropertyName("seq")]
     public ulong Seq { get; init; }
 
@@ -31,9 +27,6 @@ internal record FastPublishFlowAckResponse
 
 internal record FastPublishGapResponse
 {
-    [JsonPropertyName("type")]
-    public string? Type { get; init; }
-
     [JsonPropertyName("last_seq")]
     public ulong LastSeq { get; init; }
 
@@ -43,9 +36,6 @@ internal record FastPublishGapResponse
 
 internal record FastPublishErrResponse
 {
-    [JsonPropertyName("type")]
-    public string? Type { get; init; }
-
     [JsonPropertyName("seq")]
     public ulong Seq { get; init; }
 

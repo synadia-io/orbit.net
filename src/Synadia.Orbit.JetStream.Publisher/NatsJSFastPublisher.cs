@@ -34,11 +34,10 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
     private readonly TimeSpan _ackTimeout;
     private readonly Action<Exception>? _errorHandler;
     private readonly string _ackInboxPrefix;
-    private readonly string _gap;
+    private readonly string _replyPrefix;
 
     private readonly object _lock = new();
 
-    private string _replyPrefix;
     private ushort _flow;
     private long _sequence;
     private long _ackSequence;
@@ -68,13 +67,18 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
         _maxOutstandingAcks = fc.MaxOutstandingAcks > 0 ? fc.MaxOutstandingAcks : DefaultMaxOutstandingAcks;
         _ackTimeout = fc.AckTimeout ?? js.Opts.RequestTimeout;
         _errorHandler = _opts.ErrorHandler;
-        _gap = _opts.ContinueOnGap ? "ok" : "fail";
 
         // Use a non-_INBOX prefix because nats.net dispatches inbox subjects via an exact-match
         // map (with a connection-level _INBOX.<connId>.* wildcard), which would not deliver the
         // multi-token fast-ingest reply subjects.
         _ackInboxPrefix = "_FB." + Nuid.NewNuid();
-        _replyPrefix = BuildReplyPrefix(_ackInboxPrefix, _flow, _gap);
+
+        // The flow and gap tokens in the reply subject are read by the server only when the
+        // batch is first created (on the seq=1 message). They're fixed for the lifetime of the
+        // batch from the server's perspective, even though we may track a different current
+        // ack frequency in _flow as the server adjusts it.
+        var gap = _opts.ContinueOnGap ? "ok" : "fail";
+        _replyPrefix = _ackInboxPrefix + "." + _flow.ToString(CultureInfo.InvariantCulture) + "." + gap + ".";
     }
 
     /// <inheritdoc />
@@ -225,9 +229,6 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
         cts?.Dispose();
     }
 
-    private static string BuildReplyPrefix(string inbox, ushort flow, string gap)
-        => inbox + "." + flow.ToString(CultureInfo.InvariantCulture) + "." + gap + ".";
-
     private string BuildReplySubject(long seq, int operation)
         => _replyPrefix + seq.ToString(CultureInfo.InvariantCulture) + "." + operation.ToString(CultureInfo.InvariantCulture) + ".$FI";
 
@@ -305,10 +306,7 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
             if (isFirst && firstTcs != null)
             {
                 FastPublishFlowAckResponse firstAck;
-                using var cts = cancellationToken.CanBeCanceled
-                    ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
-                    : new CancellationTokenSource();
-                cts.CancelAfter(_ackTimeout);
+                using var cts = BatchPublishHelper.CreateCommitCancellationTokenSource(cancellationToken, _ackTimeout);
 
                 using (cts.Token.Register(static state => ((TaskCompletionSource<FastPublishFlowAckResponse>)state!).TrySetCanceled(), firstTcs))
                 {
@@ -332,10 +330,9 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
                 lock (_lock)
                 {
                     _firstAckTcs = null;
-                    if (firstAck.Messages != 0 && firstAck.Messages != _flow)
+                    if (firstAck.Messages != 0)
                     {
                         _flow = firstAck.Messages;
-                        _replyPrefix = BuildReplyPrefix(_ackInboxPrefix, _flow, _gap);
                     }
 
                     _ackSequence = (long)firstAck.Seq;
@@ -423,10 +420,7 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
                 throw;
             }
 
-            using var cts = cancellationToken.CanBeCanceled
-                ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
-                : new CancellationTokenSource();
-            cts.CancelAfter(_ackTimeout);
+            using var cts = BatchPublishHelper.CreateCommitCancellationTokenSource(cancellationToken, _ackTimeout);
 
             BatchPublishAckResponse commitAck;
             using (cts.Token.Register(static state => ((TaskCompletionSource<BatchPublishAckResponse>)state!).TrySetCanceled(), commitTcs))
@@ -631,15 +625,12 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
                 firstTcs = _firstAckTcs;
                 _firstAckTcs = null;
                 firstTcs.TrySetResult(flow);
-
-                // First ack updates state inside AddMsgInternalAsync continuation.
                 return;
             }
 
-            if (flow.Messages != 0 && flow.Messages != _flow)
+            if (flow.Messages != 0)
             {
                 _flow = flow.Messages;
-                _replyPrefix = BuildReplyPrefix(_ackInboxPrefix, _flow, _gap);
             }
 
             _ackSequence = (long)flow.Seq;
@@ -713,10 +704,7 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
     {
         var pingInterval = TimeSpan.FromMilliseconds(Math.Max(1, _ackTimeout.TotalMilliseconds / 3));
 
-        using var cts = cancellationToken.CanBeCanceled
-            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
-            : new CancellationTokenSource();
-        cts.CancelAfter(_ackTimeout);
+        using var cts = BatchPublishHelper.CreateCommitCancellationTokenSource(cancellationToken, _ackTimeout);
 
         using (cts.Token.Register(static state => ((TaskCompletionSource<bool>)state!).TrySetCanceled(), stallTcs))
         {
