@@ -133,4 +133,25 @@ internal static class BatchPublishHelper
         return JsonSerializer.Deserialize<BatchPublishAckResponse>(data);
 #endif
     }
+
+    internal static NatsHeaders CloneAndApplyMsgOpts(NatsHeaders? src, NatsJSBatchMsgOpts? opts)
+    {
+        var headers = CloneHeaders(src);
+        ApplyBatchMessageOptions(headers, opts);
+        return headers;
+    }
+
+    internal static Exception FastPublishExceptionFor(BatchPublishErrorResponse err)
+    {
+        var apiError = new ApiError { Code = err.Code, ErrCode = err.ErrCode, Description = err.Description };
+        return err.ErrCode switch
+        {
+            NatsJSFastPublishException.ErrCodeNotEnabled => new NatsJSFastPublishException(apiError),
+            NatsJSFastPublishException.ErrCodeInvalidPattern => new NatsJSFastPublishException(apiError),
+            NatsJSFastPublishException.ErrCodeInvalidId => new NatsJSFastPublishException(apiError),
+            NatsJSFastPublishException.ErrCodeUnknownId => new NatsJSFastPublishException(apiError),
+            NatsJSFastPublishException.ErrCodeTooManyInflight => new NatsJSFastPublishException(apiError),
+            _ => new NatsJSApiException(apiError),
+        };
+    }
 }
