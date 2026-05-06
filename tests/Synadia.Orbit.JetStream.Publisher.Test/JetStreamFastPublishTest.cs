@@ -155,6 +155,20 @@ public class JetStreamFastPublishTest
     }
 
     [Fact]
+    public async Task Fast_batch_commit_without_add_throws()
+    {
+        await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 14), $"Server version {connection.ServerInfo?.Version} does not support fast batch publish (requires 2.14+)");
+
+        var js = connection.CreateJetStreamContext();
+        await using var batch = js.CreateOrbitFastPublisher();
+        var ct = TestContext.Current.CancellationToken;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await batch.CommitAsync("subject", "data"u8.ToArray(), cancellationToken: ct));
+    }
+
+    [Fact]
     public async Task Fast_batch_continue_on_gap()
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });

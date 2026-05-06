@@ -378,6 +378,11 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
                     throw new NatsJSBatchClosedException();
                 }
 
+                if (_sequence == 0)
+                {
+                    throw new InvalidOperationException("Cannot commit an empty batch; call AddAsync at least once first.");
+                }
+
                 headers = BatchPublishHelper.CloneAndApplyMsgOpts(msg.Headers, opts);
                 _sequence++;
                 seq = _sequence;
