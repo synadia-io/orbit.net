@@ -135,7 +135,7 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
     /// uncommitted batch: messages already sent with <c>AddAsync</c> or <c>AddMsgAsync</c>
     /// remain as an incomplete batch on the server until the server's batch timeout expires and
     /// the in-progress messages are garbage collected. To finalize a batch explicitly, call
-    /// <c>CommitAsync</c> or <c>CommitMsgAsync</c> before disposal.
+    /// <c>CommitAsync</c>, <c>CommitMsgAsync</c>, or <c>CloseAsync</c> before disposal.
     /// </summary>
     /// <returns>A completed <see cref="ValueTask"/>.</returns>
     public ValueTask DisposeAsync()
@@ -273,8 +273,19 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
 
                 // Close up-front so concurrent commits can't both send.
                 _closed = true;
-                _sequence++;
-                currentSeq = _sequence;
+
+                // EOB: don't bump _sequence. The sentinel still ships with seq n+1 on the wire,
+                // but Size keeps reporting the count of stored messages, matching ack.BatchSize.
+                if (eob)
+                {
+                    currentSeq = _sequence + 1;
+                }
+                else
+                {
+                    _sequence++;
+                    currentSeq = _sequence;
+                }
+
                 batchId = _batchId;
             }
 

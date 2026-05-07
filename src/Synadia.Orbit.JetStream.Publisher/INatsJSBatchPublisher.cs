@@ -10,10 +10,10 @@ namespace Synadia.Orbit.JetStream.Publisher;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Disposing without calling <c>CommitAsync</c> or <c>CommitMsgAsync</c> closes the publisher
-/// locally but leaves any already-sent messages as an incomplete batch on the server until the
-/// server's batch timeout expires. Call <see cref="Discard"/> or commit before disposal to make
-/// the intent explicit.
+/// Disposing without calling <c>CommitAsync</c>, <c>CommitMsgAsync</c>, or <c>CloseAsync</c>
+/// closes the publisher locally but leaves any already-sent messages as an incomplete batch on
+/// the server until the server's batch timeout expires. Call <see cref="Discard"/> or commit
+/// before disposal to make the intent explicit.
 /// </para>
 /// <para>
 /// If a payload's value implements <see cref="IDisposable"/> (for example
@@ -109,6 +109,7 @@ public interface INatsJSBatchPublisher : IAsyncDisposable
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task containing the batch acknowledgment. <see cref="NatsJSBatchAck.BatchSize"/> excludes the sentinel.</returns>
     /// <remarks>
+    /// The sentinel is published on the subject of the first message added to the batch.
     /// If a <see cref="TimeoutException"/> or <see cref="OperationCanceledException"/> is thrown
     /// after the commit request was sent, the batch may or may not have been persisted; the ack
     /// may simply have been lost. There is no idempotency key for commits, so callers should

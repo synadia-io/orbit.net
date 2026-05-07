@@ -590,6 +590,39 @@ public class JetStreamBatchPublishTest
     }
 
     [Fact]
+    public async Task Close_size_matches_ack_batch_size()
+    {
+        await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 14), $"Server version {connection.ServerInfo?.Version} does not support batch commit EOB (requires 2.14+)");
+
+        var js = connection.CreateJetStreamContext();
+        var prefix = _server.GetNextId();
+        var streamName = $"{prefix}TEST";
+        var subject = $"{prefix}test";
+
+        var ct = TestContext.Current.CancellationToken;
+
+        await js.CreateStreamAsync(
+            new StreamConfig(streamName, [$"{subject}.>"]) { AllowAtomicPublish = true },
+            ct);
+
+        await using var batch = new NatsJSBatchPublisher(js);
+
+        await batch.AddAsync($"{subject}.1", "message 1"u8.ToArray(), cancellationToken: ct);
+        await batch.AddAsync($"{subject}.2", "message 2"u8.ToArray(), cancellationToken: ct);
+        await batch.AddAsync($"{subject}.3", "message 3"u8.ToArray(), cancellationToken: ct);
+
+        Assert.Equal(3, batch.Size);
+
+        var ack = await batch.CloseAsync(ct);
+
+        // Size must not include the EOB sentinel; it should match ack.BatchSize.
+        Assert.Equal(3, ack.BatchSize);
+        Assert.Equal(ack.BatchSize, batch.Size);
+    }
+
+    [Fact]
     public async Task Close_empty_batch_throws()
     {
         await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
