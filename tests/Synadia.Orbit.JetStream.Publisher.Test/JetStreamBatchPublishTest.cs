@@ -551,4 +551,122 @@ public class JetStreamBatchPublishTest
         Assert.NotNull(ack);
         Assert.Equal(26, ack.BatchSize);
     }
+
+    [Fact]
+    public async Task Close_with_eob_sentinel()
+    {
+        await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 14), $"Server version {connection.ServerInfo?.Version} does not support batch commit EOB (requires 2.14+)");
+
+        var js = connection.CreateJetStreamContext();
+        var prefix = _server.GetNextId();
+        var streamName = $"{prefix}TEST";
+        var subject = $"{prefix}test";
+
+        var ct = TestContext.Current.CancellationToken;
+
+        var stream = await js.CreateStreamAsync(
+            new StreamConfig(streamName, [$"{subject}.>"]) { AllowAtomicPublish = true },
+            ct);
+
+        await using var batch = new NatsJSBatchPublisher(js);
+
+        await batch.AddAsync($"{subject}.1", "message 1"u8.ToArray(), cancellationToken: ct);
+        await batch.AddAsync($"{subject}.2", "message 2"u8.ToArray(), cancellationToken: ct);
+
+        var ack = await batch.CloseAsync(ct);
+
+        Assert.NotNull(ack);
+
+        // EOB sentinel is not stored, so BatchSize counts only the two added messages.
+        Assert.Equal(2, ack.BatchSize);
+        Assert.NotEmpty(ack.BatchId);
+        Assert.Equal(streamName, ack.Stream);
+        Assert.True(batch.IsClosed);
+
+        await stream.RefreshAsync(ct);
+        Assert.Equal(2L, stream.Info.State.Messages);
+    }
+
+    [Fact]
+    public async Task Close_empty_batch_throws()
+    {
+        await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 14), $"Server version {connection.ServerInfo?.Version} does not support batch commit EOB (requires 2.14+)");
+
+        var js = connection.CreateJetStreamContext();
+        var prefix = _server.GetNextId();
+        var streamName = $"{prefix}TEST";
+        var subject = $"{prefix}test";
+
+        var ct = TestContext.Current.CancellationToken;
+
+        await js.CreateStreamAsync(
+            new StreamConfig(streamName, [$"{subject}.>"]) { AllowAtomicPublish = true },
+            ct);
+
+        await using var batch = new NatsJSBatchPublisher(js);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await batch.CloseAsync(ct));
+
+        // Empty close does not close the batch; subsequent Add still works.
+        Assert.False(batch.IsClosed);
+        await batch.AddAsync($"{subject}.1", "message 1"u8.ToArray(), cancellationToken: ct);
+        var ack = await batch.CloseAsync(ct);
+        Assert.Equal(1, ack.BatchSize);
+    }
+
+    [Fact]
+    public async Task Close_after_close_throws()
+    {
+        await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 14), $"Server version {connection.ServerInfo?.Version} does not support batch commit EOB (requires 2.14+)");
+
+        var js = connection.CreateJetStreamContext();
+        var prefix = _server.GetNextId();
+        var streamName = $"{prefix}TEST";
+        var subject = $"{prefix}test";
+
+        var ct = TestContext.Current.CancellationToken;
+
+        await js.CreateStreamAsync(
+            new StreamConfig(streamName, [$"{subject}.>"]) { AllowAtomicPublish = true },
+            ct);
+
+        await using var batch = new NatsJSBatchPublisher(js);
+
+        await batch.AddAsync($"{subject}.1", "message 1"u8.ToArray(), cancellationToken: ct);
+        await batch.CloseAsync(ct);
+
+        await Assert.ThrowsAsync<NatsJSBatchClosedException>(async () => await batch.CloseAsync(ct));
+    }
+
+    [Fact]
+    public async Task Close_after_commit_throws()
+    {
+        await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 14), $"Server version {connection.ServerInfo?.Version} does not support batch commit EOB (requires 2.14+)");
+
+        var js = connection.CreateJetStreamContext();
+        var prefix = _server.GetNextId();
+        var streamName = $"{prefix}TEST";
+        var subject = $"{prefix}test";
+
+        var ct = TestContext.Current.CancellationToken;
+
+        await js.CreateStreamAsync(
+            new StreamConfig(streamName, [$"{subject}.>"]) { AllowAtomicPublish = true },
+            ct);
+
+        await using var batch = new NatsJSBatchPublisher(js);
+
+        await batch.AddAsync($"{subject}.1", "message 1"u8.ToArray(), cancellationToken: ct);
+        await batch.CommitAsync($"{subject}.2", "message 2"u8.ToArray(), cancellationToken: ct);
+
+        await Assert.ThrowsAsync<NatsJSBatchClosedException>(async () => await batch.CloseAsync(ct));
+    }
 }

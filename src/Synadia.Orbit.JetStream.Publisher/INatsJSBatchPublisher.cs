@@ -103,6 +103,20 @@ public interface INatsJSBatchPublisher : IAsyncDisposable
     Task<NatsJSBatchAck> CommitMsgAsync<T>(NatsMsg<T> msg, NatsJSBatchMsgOpts? opts = null, INatsSerialize<T>? serializer = null, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Commits the batch with an end-of-batch sentinel; the final message is not stored.
+    /// Throws <see cref="InvalidOperationException"/> if no messages have been added.
+    /// </summary>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A task containing the batch acknowledgment. <see cref="NatsJSBatchAck.BatchSize"/> excludes the sentinel.</returns>
+    /// <remarks>
+    /// If a <see cref="TimeoutException"/> or <see cref="OperationCanceledException"/> is thrown
+    /// after the commit request was sent, the batch may or may not have been persisted; the ack
+    /// may simply have been lost. There is no idempotency key for commits, so callers should
+    /// check the stream's last sequence before retrying.
+    /// </remarks>
+    Task<NatsJSBatchAck> CloseAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Cancels the batch without committing.
     /// </summary>
     void Discard();

@@ -91,6 +91,18 @@ NatsJSBatchAck ack = await batch.CommitAsync("orders.3", "third"u8.ToArray());
 Console.WriteLine($"Committed {ack.BatchSize} messages as batch {ack.BatchId} to {ack.Stream}");
 ```
 
+To commit without storing a final message, use `CloseAsync` (NATS Server 2.14+):
+
+```csharp
+await using var batch = new NatsJSBatchPublisher(js);
+
+await batch.AddAsync("orders.1", "first"u8.ToArray());
+await batch.AddAsync("orders.2", "second"u8.ToArray());
+
+NatsJSBatchAck ack = await batch.CloseAsync();
+// ack.BatchSize == 2 (the EOB sentinel is not stored).
+```
+
 For a one-shot batch of messages already in memory, use the `PublishMsgBatchAsync`
 extension on `INatsJSContext`:
 
