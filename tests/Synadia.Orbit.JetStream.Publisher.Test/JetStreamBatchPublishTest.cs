@@ -617,7 +617,6 @@ public class JetStreamBatchPublishTest
 
         var ack = await batch.CloseAsync(ct);
 
-        // Size must not include the EOB sentinel; it should match ack.BatchSize.
         Assert.Equal(3, ack.BatchSize);
         Assert.Equal(ack.BatchSize, batch.Size);
     }
