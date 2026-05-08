@@ -19,7 +19,8 @@ public static class NatsJSBatchHeaders
     public const string BatchSeq = "Nats-Batch-Sequence";
 
     /// <summary>
-    /// Signals the final message in a batch when set to "1".
+    /// Signals the final message in a batch. Set to "1" to commit and store this message,
+    /// or "eob" to commit without storing it (server 2.14+).
     /// </summary>
     public const string BatchCommit = "Nats-Batch-Commit";
 }

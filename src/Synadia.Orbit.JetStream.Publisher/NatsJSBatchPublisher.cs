@@ -24,6 +24,7 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
     private readonly object _lock = new();
     private int _sequence;
     private bool _closed;
+    private string? _batchSubject;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NatsJSBatchPublisher"/> class.
@@ -85,12 +86,35 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
             Subject = subject,
             Data = data,
         };
-        return CommitMsgInternalAsync(msg, opts, serializer, cancellationToken);
+        return CommitMsgInternalAsync(msg, opts, serializer, eob: false, cancellationToken);
     }
 
     /// <inheritdoc />
     public Task<NatsJSBatchAck> CommitMsgAsync<T>(NatsMsg<T> msg, NatsJSBatchMsgOpts? opts = null, INatsSerialize<T>? serializer = null, CancellationToken cancellationToken = default)
-        => CommitMsgInternalAsync(msg, opts, serializer, cancellationToken);
+        => CommitMsgInternalAsync(msg, opts, serializer, eob: false, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<NatsJSBatchAck> CloseAsync(CancellationToken cancellationToken = default)
+    {
+        string subject;
+        lock (_lock)
+        {
+            if (_closed)
+            {
+                throw new NatsJSBatchClosedException();
+            }
+
+            if (_sequence == 0 || _batchSubject == null)
+            {
+                throw new InvalidOperationException("Cannot close an empty batch");
+            }
+
+            subject = _batchSubject;
+        }
+
+        var msg = new NatsMsg<byte[]> { Subject = subject };
+        return CommitMsgInternalAsync<byte[]>(msg, opts: null, serializer: null, eob: true, cancellationToken);
+    }
 
     /// <inheritdoc />
     public void Discard()
@@ -111,7 +135,7 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
     /// uncommitted batch: messages already sent with <c>AddAsync</c> or <c>AddMsgAsync</c>
     /// remain as an incomplete batch on the server until the server's batch timeout expires and
     /// the in-progress messages are garbage collected. To finalize a batch explicitly, call
-    /// <c>CommitAsync</c> or <c>CommitMsgAsync</c> before disposal.
+    /// <c>CommitAsync</c>, <c>CommitMsgAsync</c>, or <c>CloseAsync</c> before disposal.
     /// </summary>
     /// <returns>A completed <see cref="ValueTask"/>.</returns>
     public ValueTask DisposeAsync()
@@ -150,6 +174,11 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
 
                 _sequence++;
                 currentSeq = _sequence;
+
+                if (currentSeq == 1)
+                {
+                    _batchSubject = msg.Subject;
+                }
 
                 needsAck = (_flowControl.AckFirst && currentSeq == 1)
                     || (_flowControl.AckEvery > 0 && currentSeq % _flowControl.AckEvery == 0);
@@ -223,7 +252,7 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
         }
     }
 
-    private async Task<NatsJSBatchAck> CommitMsgInternalAsync<T>(NatsMsg<T> msg, NatsJSBatchMsgOpts? opts, INatsSerialize<T>? serializer, CancellationToken cancellationToken)
+    private async Task<NatsJSBatchAck> CommitMsgInternalAsync<T>(NatsMsg<T> msg, NatsJSBatchMsgOpts? opts, INatsSerialize<T>? serializer, bool eob, CancellationToken cancellationToken)
     {
         var owned = msg.Data as IDisposable;
         try
@@ -244,14 +273,25 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
 
                 // Close up-front so concurrent commits can't both send.
                 _closed = true;
-                _sequence++;
-                currentSeq = _sequence;
+
+                // EOB: don't bump _sequence. The sentinel still ships with seq n+1 on the wire,
+                // but Size keeps reporting the count of stored messages, matching ack.BatchSize.
+                if (eob)
+                {
+                    currentSeq = _sequence + 1;
+                }
+                else
+                {
+                    _sequence++;
+                    currentSeq = _sequence;
+                }
+
                 batchId = _batchId;
             }
 
             headers[NatsJSBatchHeaders.BatchId] = batchId;
             headers[NatsJSBatchHeaders.BatchSeq] = currentSeq.ToString();
-            headers[NatsJSBatchHeaders.BatchCommit] = "1";
+            headers[NatsJSBatchHeaders.BatchCommit] = eob ? "eob" : "1";
 
             var msgToSend = msg with { Headers = headers };
 
@@ -282,10 +322,11 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
                 BatchPublishHelper.ThrowBatchPublishException(batchResponse.Error);
             }
 
+            var expectedSize = eob ? currentSeq - 1 : currentSeq;
             if (batchResponse == null ||
                 string.IsNullOrEmpty(batchResponse.Stream) ||
                 batchResponse.BatchId != batchId ||
-                batchResponse.BatchSize != currentSeq)
+                batchResponse.BatchSize != expectedSize)
             {
                 throw new NatsJSInvalidBatchAckException();
             }
