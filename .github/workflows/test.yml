@@ -13,7 +13,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        branch: ['v2.10', 'v2.11', 'latest', 'main']
+        branch: ['v2.11', 'v2.12', 'latest', 'main']
 
     runs-on: ${{ matrix.os }}
 
