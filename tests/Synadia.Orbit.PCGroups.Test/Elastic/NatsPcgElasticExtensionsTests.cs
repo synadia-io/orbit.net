@@ -723,7 +723,7 @@ public class NatsPcgElasticExtensionsTests
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var consumed = 0;
-        var reachedBail = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reachedBail = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var nats = new NatsConnection(new NatsOpts
         {
@@ -746,7 +746,7 @@ public class NatsPcgElasticExtensionsTests
 
                         if (Volatile.Read(ref consumed) == bailAt)
                         {
-                            reachedBail.TrySetResult();
+                            reachedBail.TrySetResult(true);
                         }
 
                         await Task.Delay(50, cts.Token);
