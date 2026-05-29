@@ -223,6 +223,11 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
 
                     if (!hasNext)
                     {
+                        if (_js.Connection.Opts.DrainSubscriptionsOnDispose)
+                        {
+                            yield break;
+                        }
+
                         break;
                     }
 

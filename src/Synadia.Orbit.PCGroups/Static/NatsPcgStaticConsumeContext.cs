@@ -178,6 +178,11 @@ internal sealed class NatsPcgStaticConsumeContext<T> : IAsyncEnumerable<NatsPcgM
 
                     if (!hasNext)
                     {
+                        if (_js.Connection.Opts.DrainSubscriptionsOnDispose)
+                        {
+                            yield break;
+                        }
+
                         break;
                     }
 
