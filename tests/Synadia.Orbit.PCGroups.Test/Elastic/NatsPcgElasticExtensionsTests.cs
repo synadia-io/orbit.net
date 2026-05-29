@@ -733,6 +733,7 @@ public class NatsPcgElasticExtensionsTests
         });
         var js = nats.CreateJetStreamContext();
 
+        Task? disposeTask = null;
         var consumeTask = Task.Run(
             async () =>
             {
@@ -761,7 +762,7 @@ public class NatsPcgElasticExtensionsTests
         {
             await TaskTestHelpers.AssertCompletesWithinAsync(reachedBail.Task, TimeSpan.FromSeconds(10));
 
-            var disposeTask = nats.DisposeAsync().AsTask();
+            disposeTask = nats.DisposeAsync().AsTask();
             await TaskTestHelpers.AssertCompletesWithinAsync(disposeTask, TimeSpan.FromSeconds(10));
 
             await TaskTestHelpers.AssertCompletesWithinAsync(consumeTask, TimeSpan.FromSeconds(10));
@@ -776,6 +777,8 @@ public class NatsPcgElasticExtensionsTests
         finally
         {
             cts.Cancel();
+            disposeTask ??= nats.DisposeAsync().AsTask();
+            await Task.WhenAny(disposeTask, Task.Delay(TimeSpan.FromSeconds(5)));
             await Task.WhenAny(consumeTask, Task.Delay(TimeSpan.FromSeconds(5)));
         }
     }
