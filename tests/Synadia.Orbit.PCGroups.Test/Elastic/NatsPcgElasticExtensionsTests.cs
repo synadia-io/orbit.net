@@ -690,8 +690,8 @@ public class NatsPcgElasticExtensionsTests
     [Fact]
     public async Task ConsumeElastic_ConnectionDisposeDrainsBufferedMessagesAndCompletes()
     {
-        const int totalMsgs = 100;
-        const int bailAt = 10;
+        const int totalMsgs = 30;
+        const int bailAt = 5;
 
         await using var setup = new NatsConnection(new NatsOpts { Url = _server.Url });
         var setupJs = setup.CreateJetStreamContext();
@@ -724,6 +724,7 @@ public class NatsPcgElasticExtensionsTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var consumed = 0;
         var reachedBail = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseAfterDisposeStarts = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var nats = new NatsConnection(new NatsOpts
         {
@@ -747,9 +748,8 @@ public class NatsPcgElasticExtensionsTests
                         if (Volatile.Read(ref consumed) == bailAt)
                         {
                             reachedBail.TrySetResult(true);
+                            await releaseAfterDisposeStarts.Task.ConfigureAwait(false);
                         }
-
-                        await Task.Delay(50, cts.Token);
                     }
                 }
                 catch (OperationCanceledException) when (cts.IsCancellationRequested)
@@ -763,6 +763,7 @@ public class NatsPcgElasticExtensionsTests
             await TaskTestHelpers.AssertCompletesWithinAsync(reachedBail.Task, TimeSpan.FromSeconds(10));
 
             disposeTask = nats.DisposeAsync().AsTask();
+            releaseAfterDisposeStarts.TrySetResult(true);
             await TaskTestHelpers.AssertCompletesWithinAsync(disposeTask, TimeSpan.FromSeconds(10));
 
             await TaskTestHelpers.AssertCompletesWithinAsync(consumeTask, TimeSpan.FromSeconds(10));
@@ -776,6 +777,7 @@ public class NatsPcgElasticExtensionsTests
         }
         finally
         {
+            releaseAfterDisposeStarts.TrySetResult(true);
             cts.Cancel();
             disposeTask ??= nats.DisposeAsync().AsTask();
             await Task.WhenAny(disposeTask, Task.Delay(TimeSpan.FromSeconds(5)));
