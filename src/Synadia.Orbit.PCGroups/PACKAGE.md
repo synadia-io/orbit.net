@@ -142,6 +142,24 @@ record Event(string EventId, string UserId, string Type);
 | Stream Setup | Requires SubjectTransform | Auto-creates work-queue stream |
 | Configuration | Simpler | More flexible |
 
+## Graceful Shutdown
+
+PCGroups supports NATS .NET drain-on-dispose. Enable it on the connection to let
+in-flight JetStream consumer messages already buffered by the client continue to
+flow through the PCGroups async enumerable before the connection is closed:
+
+```csharp
+await using var nats = new NatsConnection(new NatsOpts
+{
+    DrainSubscriptionsOnDispose = true,
+    ConsumerDrainOnDisposeTimeout = TimeSpan.FromSeconds(30),
+});
+```
+
+Without `DrainSubscriptionsOnDispose`, NATS .NET closes the socket first during
+connection disposal and buffered consumer messages may remain pending until
+`AckWait` expires.
+
 ## Custom Partition Mappings
 
 For fine-grained control over partition distribution:

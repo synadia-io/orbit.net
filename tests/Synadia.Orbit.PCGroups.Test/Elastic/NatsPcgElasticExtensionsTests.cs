@@ -6,6 +6,7 @@ using NATS.Client.Core;
 using NATS.Client.JetStream.Models;
 using NATS.Net;
 using Synadia.Orbit.PCGroups.Elastic;
+using Synadia.Orbit.PCGroups.Test;
 using Synadia.Orbit.TestUtils;
 
 namespace Synadia.Orbit.PCGroups.Test.Elastic;
@@ -683,6 +684,104 @@ public class NatsPcgElasticExtensionsTests
         finally
         {
             await js.DeleteStreamAsync(streamName);
+        }
+    }
+
+    [Fact]
+    public async Task ConsumeElastic_ConnectionDisposeDrainsBufferedMessagesAndCompletes()
+    {
+        const int totalMsgs = 30;
+        const int bailAt = 5;
+
+        await using var setup = new NatsConnection(new NatsOpts { Url = _server.Url });
+        var setupJs = setup.CreateJetStreamContext();
+
+        var id = Guid.NewGuid().ToString("N");
+        var streamName = $"test-stream-{id}";
+        var subject = $"{id}.orders.*";
+        var groupName = $"test-group-{id}";
+        var workQueueStreamName = $"{streamName}-{groupName}";
+
+        await setupJs.CreateStreamAsync(new StreamConfig
+        {
+            Name = streamName,
+            Subjects = [subject],
+        });
+
+        await setupJs.CreatePcgElasticAsync(
+            streamName,
+            groupName,
+            maxNumMembers: 1,
+            partitioningFilters: [new NatsPcgPartitioningFilter(subject, [1])]);
+
+        await setupJs.AddPcgElasticMembersAsync(streamName, groupName, ["worker"]);
+
+        for (var i = 0; i < totalMsgs; i++)
+        {
+            await setupJs.PublishAsync($"{id}.orders.{i}", $"payload-{i}");
+        }
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var consumed = 0;
+        var reachedBail = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseAfterDisposeStarts = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var nats = new NatsConnection(new NatsOpts
+        {
+            Url = _server.Url,
+            DrainSubscriptionsOnDispose = true,
+            ConsumerDrainOnDisposeTimeout = TimeSpan.FromSeconds(30),
+        });
+        var js = nats.CreateJetStreamContext();
+
+        Task? disposeTask = null;
+        var consumeTask = Task.Run(
+            async () =>
+            {
+                try
+                {
+                    await foreach (var msg in js.ConsumePcgElasticAsync<string>(streamName, groupName, "worker", cancellationToken: cts.Token))
+                    {
+                        Interlocked.Increment(ref consumed);
+                        await msg.AckAsync(cancellationToken: cts.Token);
+
+                        if (Volatile.Read(ref consumed) == bailAt)
+                        {
+                            reachedBail.TrySetResult(true);
+                            await releaseAfterDisposeStarts.Task.ConfigureAwait(false);
+                        }
+                    }
+                }
+                catch (OperationCanceledException) when (cts.IsCancellationRequested)
+                {
+                }
+            },
+            cts.Token);
+
+        try
+        {
+            await TaskTestHelpers.AssertCompletesWithinAsync(reachedBail.Task, TimeSpan.FromSeconds(10));
+
+            disposeTask = nats.DisposeAsync().AsTask();
+            releaseAfterDisposeStarts.TrySetResult(true);
+            await TaskTestHelpers.AssertCompletesWithinAsync(disposeTask, TimeSpan.FromSeconds(10));
+
+            await TaskTestHelpers.AssertCompletesWithinAsync(consumeTask, TimeSpan.FromSeconds(10));
+
+            Assert.True(Volatile.Read(ref consumed) > bailAt, $"consumed {Volatile.Read(ref consumed)} should be greater than {bailAt}");
+
+            await using var check = new NatsConnection(new NatsOpts { Url = _server.Url });
+            var checkJs = check.CreateJetStreamContext();
+            var consumer = await checkJs.GetConsumerAsync(workQueueStreamName, "worker");
+            Assert.Equal(0, consumer.Info.NumAckPending);
+        }
+        finally
+        {
+            releaseAfterDisposeStarts.TrySetResult(true);
+            cts.Cancel();
+            disposeTask ??= nats.DisposeAsync().AsTask();
+            await Task.WhenAny(disposeTask, Task.Delay(TimeSpan.FromSeconds(5)));
+            await Task.WhenAny(consumeTask, Task.Delay(TimeSpan.FromSeconds(5)));
         }
     }
 
