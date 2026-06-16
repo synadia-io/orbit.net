@@ -245,8 +245,10 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
                         yield break;
                     }
 
-                    // Check if we need to stop and recreate
-                    if (_needsRecreate)
+                    // Check if we need to stop and recreate. Skip while actively
+                    // draining on cancel so the buffered messages finish first
+                    // instead of being cut off by a mid-drain membership change.
+                    if (_needsRecreate && !(_drainOnCancel && linkedToken.IsCancellationRequested))
                     {
                         break;
                     }

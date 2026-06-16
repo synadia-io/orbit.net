@@ -859,6 +859,10 @@ public class NatsPcgElasticExtensionsTests
 
             Assert.True(Volatile.Read(ref consumed) > bailAt, $"consumed {Volatile.Read(ref consumed)} should be greater than {bailAt}");
 
+            // Acks are published without a server round-trip; ping the consuming
+            // connection to flush the drained acks before checking server state.
+            await nats.PingAsync();
+
             await using var check = new NatsConnection(new NatsOpts { Url = _server.Url });
             var checkJs = check.CreateJetStreamContext();
             var consumer = await checkJs.GetConsumerAsync(workQueueStreamName, "worker");
