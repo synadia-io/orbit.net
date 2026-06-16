@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-    <NatsVersion>2.8.0</NatsVersion>
+    <NatsVersion>3.0.0-preview.9</NatsVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="NATS.Net" Version="$(NatsVersion)" />
@@ -15,7 +15,7 @@
 
     <PackageVersion Include="System.Text.Json" Version="8.0.5"/>
     <PackageVersion Include="System.Threading.Channels" Version="8.0.0"/>
-    <PackageVersion Include="System.Diagnostics.DiagnosticSource" Version="8.0.1"/>
+    <PackageVersion Include="System.Diagnostics.DiagnosticSource" Version="9.0.1"/>
     <PackageVersion Include="PolySharp" Version="1.14.1"/>
 
     <PackageVersion Include="Microsoft.Bcl.Memory" Version="9.0.14"/>

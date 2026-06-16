@@ -22,6 +22,7 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
     private readonly string _memberName;
     private readonly INatsDeserialize<T>? _serializer;
     private readonly ConsumerConfig? _userConfig;
+    private readonly bool _drainOnCancel;
 
     private readonly CancellationTokenSource _cts = new();
     private readonly object _configLock = new();
@@ -40,7 +41,8 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
         string memberName,
         NatsPcgElasticConfig config,
         INatsDeserialize<T>? serializer,
-        ConsumerConfig? userConfig)
+        ConsumerConfig? userConfig,
+        bool drainOnCancel)
     {
         _js = js;
         _streamName = streamName;
@@ -49,6 +51,7 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
         _config = config;
         _serializer = serializer;
         _userConfig = userConfig;
+        _drainOnCancel = drainOnCancel;
     }
 
     public async ValueTask DisposeAsync()
@@ -175,6 +178,7 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
                     Expires = NatsPcgConstants.PullTimeout,
                     IdleHeartbeat = TimeSpan.FromMilliseconds(NatsPcgConstants.PullTimeout.TotalMilliseconds / 2),
                     PriorityGroup = priorityGroup,
+                    DrainOnCancel = _drainOnCancel,
                 };
 
                 messages = _consumer.ConsumeAsync(_serializer, consumeOpts, linkedToken);
@@ -223,7 +227,10 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
 
                     if (!hasNext)
                     {
-                        if (_js.Connection.Opts.DrainSubscriptionsOnDispose)
+                        // Underlying consume completed. When cancelled with DrainOnCancel,
+                        // the client has already flushed buffered messages, so finish here
+                        // instead of looping back to recreate the consumer.
+                        if (linkedToken.IsCancellationRequested || _js.Connection.Opts.DrainSubscriptionsOnDispose)
                         {
                             yield break;
                         }
@@ -231,7 +238,9 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
                         break;
                     }
 
-                    if (_stopped || linkedToken.IsCancellationRequested)
+                    // While draining on cancel keep yielding the buffered messages the
+                    // client hands us; the loop ends when MoveNextAsync reports completion.
+                    if (!_drainOnCancel && (_stopped || linkedToken.IsCancellationRequested))
                     {
                         yield break;
                     }

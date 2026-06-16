@@ -786,6 +786,93 @@ public class NatsPcgElasticExtensionsTests
     }
 
     [Fact]
+    public async Task ConsumeElastic_DrainOnCancelDeliversBufferedMessagesAndCompletes()
+    {
+        const int totalMsgs = 30;
+        const int bailAt = 5;
+
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
+        var js = nats.CreateJetStreamContext();
+
+        var id = Guid.NewGuid().ToString("N");
+        var streamName = $"test-stream-{id}";
+        var subject = $"{id}.orders.*";
+        var groupName = $"test-group-{id}";
+        var workQueueStreamName = $"{streamName}-{groupName}";
+
+        await js.CreateStreamAsync(new StreamConfig
+        {
+            Name = streamName,
+            Subjects = [subject],
+        });
+
+        await js.CreatePcgElasticAsync(
+            streamName,
+            groupName,
+            maxNumMembers: 1,
+            partitioningFilters: [new NatsPcgPartitioningFilter(subject, [1])]);
+
+        await js.AddPcgElasticMembersAsync(streamName, groupName, ["worker"]);
+
+        for (var i = 0; i < totalMsgs; i++)
+        {
+            await js.PublishAsync($"{id}.orders.{i}", $"payload-{i}");
+        }
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var consumed = 0;
+        var reachedBail = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseAfterCancelStarts = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var consumeTask = Task.Run(
+            async () =>
+            {
+                try
+                {
+                    await foreach (var msg in js.ConsumePcgElasticAsync<string>(streamName, groupName, "worker", drainOnCancel: true, cancellationToken: cts.Token))
+                    {
+                        Interlocked.Increment(ref consumed);
+
+                        // Ack on the still-open connection; the consume token is cancelled mid-drain.
+                        await msg.AckAsync(cancellationToken: CancellationToken.None);
+
+                        if (Volatile.Read(ref consumed) == bailAt)
+                        {
+                            reachedBail.TrySetResult(true);
+                            await releaseAfterCancelStarts.Task.ConfigureAwait(false);
+                        }
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            });
+
+        try
+        {
+            await TaskTestHelpers.AssertCompletesWithinAsync(reachedBail.Task, TimeSpan.FromSeconds(10));
+
+            cts.Cancel();
+            releaseAfterCancelStarts.TrySetResult(true);
+
+            await TaskTestHelpers.AssertCompletesWithinAsync(consumeTask, TimeSpan.FromSeconds(10));
+
+            Assert.True(Volatile.Read(ref consumed) > bailAt, $"consumed {Volatile.Read(ref consumed)} should be greater than {bailAt}");
+
+            await using var check = new NatsConnection(new NatsOpts { Url = _server.Url });
+            var checkJs = check.CreateJetStreamContext();
+            var consumer = await checkJs.GetConsumerAsync(workQueueStreamName, "worker");
+            Assert.Equal(0, consumer.Info.NumAckPending);
+        }
+        finally
+        {
+            releaseAfterCancelStarts.TrySetResult(true);
+            cts.Cancel();
+            await Task.WhenAny(consumeTask, Task.Delay(TimeSpan.FromSeconds(5)));
+        }
+    }
+
+    [Fact]
     public async Task CreatePcgElastic_EmptyWildcards_FullSubjectPartition_Success()
     {
         await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
