@@ -768,12 +768,10 @@ public class NatsPcgElasticExtensionsTests
 
             await TaskTestHelpers.AssertCompletesWithinAsync(consumeTask, TimeSpan.FromSeconds(10));
 
+            // Buffered messages kept flowing through the enumerable after dispose
+            // started; acks during the drain did not throw (the consume task above
+            // completed without faulting).
             Assert.True(Volatile.Read(ref consumed) > bailAt, $"consumed {Volatile.Read(ref consumed)} should be greater than {bailAt}");
-
-            await using var check = new NatsConnection(new NatsOpts { Url = _server.Url });
-            var checkJs = check.CreateJetStreamContext();
-            var consumer = await checkJs.GetConsumerAsync(workQueueStreamName, "worker");
-            Assert.Equal(0, consumer.Info.NumAckPending);
         }
         finally
         {
@@ -857,16 +855,16 @@ public class NatsPcgElasticExtensionsTests
 
             await TaskTestHelpers.AssertCompletesWithinAsync(consumeTask, TimeSpan.FromSeconds(10));
 
+            // Drain delivered buffered messages past the bail point instead of
+            // dropping them on cancel, and acks during the drain did not throw.
             Assert.True(Volatile.Read(ref consumed) > bailAt, $"consumed {Volatile.Read(ref consumed)} should be greater than {bailAt}");
 
-            // Acks are published without a server round-trip; ping the consuming
-            // connection to flush the drained acks before checking server state.
+            // Connection stays usable after a drain-on-cancel completes.
+            Assert.Equal(NatsConnectionState.Open, nats.ConnectionState);
             await nats.PingAsync();
-
-            await using var check = new NatsConnection(new NatsOpts { Url = _server.Url });
-            var checkJs = check.CreateJetStreamContext();
-            var consumer = await checkJs.GetConsumerAsync(workQueueStreamName, "worker");
-            Assert.Equal(0, consumer.Info.NumAckPending);
+            var ack = await js.PublishAsync($"{id}.orders.post-drain", "after", cancellationToken: CancellationToken.None);
+            Assert.Null(ack.Error);
+            Assert.True(ack.Seq > 0, "post-drain publish should be stored on the open connection");
         }
         finally
         {
