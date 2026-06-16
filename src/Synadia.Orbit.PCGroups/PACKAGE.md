@@ -161,9 +161,11 @@ connection disposal and buffered consumer messages may remain pending until
 `AckWait` expires.
 
 To drain without disposing the connection, pass `drainOnCancel: true` to the
-consume call. Cancelling the supplied token then stops pulling, delivers the
-messages already buffered by the client so handlers can ACK them on the still
-open connection, and completes the enumerable instead of stopping immediately:
+consume call. A graceful stop then stops pulling, delivers the messages already
+buffered by the client so handlers can ACK them on the still open connection,
+and completes the enumerable instead of stopping immediately. A graceful stop is
+either cancelling the supplied token or an internal lifecycle event such as a
+membership change; buffered messages are valid for this consumer either way:
 
 ```csharp
 using var cts = new CancellationTokenSource();
