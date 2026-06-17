@@ -172,9 +172,9 @@ public class CounterSourcesTest
                     return entry;
                 }
             }
-            catch (NatsCounterException)
+            catch (NatsCounterException e) when (e.Code == 2001)
             {
-                // Subject not initialized yet; source replication has not arrived.
+                // NoCounterForSubject: subject not initialized yet; source replication has not arrived.
             }
 
             await Task.Delay(100, cancellationToken).ConfigureAwait(false);
