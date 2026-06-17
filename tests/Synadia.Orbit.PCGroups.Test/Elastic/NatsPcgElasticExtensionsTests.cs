@@ -772,8 +772,24 @@ public class NatsPcgElasticExtensionsTests
 
             await using var check = new NatsConnection(new NatsOpts { Url = _server.Url });
             var checkJs = check.CreateJetStreamContext();
-            var consumer = await checkJs.GetConsumerAsync(workQueueStreamName, "worker");
-            Assert.Equal(0, consumer.Info.NumAckPending);
+
+            // Acks sent during drain propagate to the server asynchronously, so
+            // the consumer info may still report pending acks for a moment after
+            // dispose completes. Poll until it settles instead of reading once.
+            var numAckPending = -1;
+            for (var attempt = 0; attempt < 100; attempt++)
+            {
+                var consumer = await checkJs.GetConsumerAsync(workQueueStreamName, "worker");
+                numAckPending = consumer.Info.NumAckPending;
+                if (numAckPending == 0)
+                {
+                    break;
+                }
+
+                await Task.Delay(100, cts.Token);
+            }
+
+            Assert.Equal(0, numAckPending);
         }
         finally
         {
