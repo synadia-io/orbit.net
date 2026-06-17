@@ -1011,7 +1011,10 @@ public class NatsPcgElasticExtensionsTests
                 await js.PublishAsync($"ewp{id}.item{i}", $"payload{i}");
             }
 
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            // Generous budget: two elastic members must spin up consumers and the
+            // partitions must distribute; the wait loop below exits as soon as all
+            // 20 arrive, so this only caps the worst case on slow runners.
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             var memberAMessages = new List<string>();
             var memberBMessages = new List<string>();
 
@@ -1073,7 +1076,7 @@ public class NatsPcgElasticExtensionsTests
             var memberARound2 = new List<string>();
             var memberBRound2 = new List<string>();
 
-            using var cts2 = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            using var cts2 = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
             var taskA2 = Task.Run(async () =>
             {
