@@ -700,7 +700,6 @@ public class NatsPcgElasticExtensionsTests
         var streamName = $"test-stream-{id}";
         var subject = $"{id}.orders.*";
         var groupName = $"test-group-{id}";
-        var workQueueStreamName = $"{streamName}-{groupName}";
 
         await setupJs.CreateStreamAsync(new StreamConfig
         {
@@ -772,6 +771,14 @@ public class NatsPcgElasticExtensionsTests
             // started; acks during the drain did not throw (the consume task above
             // completed without faulting).
             Assert.True(Volatile.Read(ref consumed) > bailAt, $"consumed {Volatile.Read(ref consumed)} should be greater than {bailAt}");
+
+            // We intentionally do not assert server-side NumAckPending == 0 here.
+            // Disposing a pull consumer mid-drain races server delivery: the server
+            // can count a message as delivered that the client never receives (its
+            // delivery inbox is torn down first), so NumAckPending is not
+            // deterministically zero after a connection-dispose drain. This test
+            // covers the drain contract: buffered messages keep flowing past the
+            // bail point and the consume loop completes without hanging.
         }
         finally
         {

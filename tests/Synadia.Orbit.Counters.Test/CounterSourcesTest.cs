@@ -111,11 +111,9 @@ public class CounterSourcesTest
         await esCounter.AddAsync($"{prefix}.es.views", new BigInteger(200), ct);
         await plCounter.AddAsync($"{prefix}.pl.hits", new BigInteger(150), ct);
 
-        // Wait for source sync
-        await Task.Delay(500, ct);
-
-        // Check EU aggregation
-        var euHits = await euCounter.GetAsync($"{prefix}.eu.hits", ct);
+        // Wait for the source aggregation to converge rather than a fixed delay,
+        // which flakes on slow runners.
+        var euHits = await WaitForCounterValueAsync(euCounter, $"{prefix}.eu.hits", new BigInteger(250), ct);
         _output.WriteLine($"EU hits: {euHits.Value}");
         Assert.Equal(new BigInteger(250), euHits.Value);
 
@@ -143,8 +141,8 @@ public class CounterSourcesTest
         Assert.Equal(new BigInteger(250), euEntries[$"{prefix}.eu.hits"].Value);
         Assert.Equal(new BigInteger(200), euEntries[$"{prefix}.eu.views"].Value);
 
-        // Check global aggregation
-        var globalHits = await globalCounter.GetAsync($"{prefix}.g.hits", ct);
+        // Check global aggregation (second-level source, may converge after EU)
+        var globalHits = await WaitForCounterValueAsync(globalCounter, $"{prefix}.g.hits", new BigInteger(250), ct);
         _output.WriteLine($"Global hits: {globalHits.Value}");
         Assert.Equal(new BigInteger(250), globalHits.Value);
 
@@ -155,5 +153,34 @@ public class CounterSourcesTest
 
         var globalViews = await globalCounter.LoadAsync($"{prefix}.g.views", ct);
         Assert.Equal(new BigInteger(200), globalViews);
+    }
+
+    // Source aggregation replicates asynchronously, so poll until the counter
+    // reaches the expected value instead of waiting a fixed amount of time. The
+    // subject is not initialized until the first replicated message arrives, so
+    // a miss throws until then; treat that as not-yet-converged.
+    private static async Task<CounterEntry> WaitForCounterValueAsync(
+        NatsJSCounter counter, string subject, BigInteger expected, CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            try
+            {
+                var entry = await counter.GetAsync(subject, cancellationToken).ConfigureAwait(false);
+                if (entry.Value == expected)
+                {
+                    return entry;
+                }
+            }
+            catch (NatsCounterException e) when (e.Code == 2001)
+            {
+                // NoCounterForSubject: subject not initialized yet; source replication has not arrived.
+            }
+
+            await Task.Delay(100, cancellationToken).ConfigureAwait(false);
+        }
+
+        // Final read so the caller's assertion surfaces a clear value on timeout.
+        return await counter.GetAsync(subject, cancellationToken).ConfigureAwait(false);
     }
 }
