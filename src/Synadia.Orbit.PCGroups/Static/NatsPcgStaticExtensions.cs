@@ -98,6 +98,7 @@ public static class NatsPcgStaticExtensions
     /// <param name="memberName">Name of this member.</param>
     /// <param name="serializer">Optional deserializer for message data.</param>
     /// <param name="config">Optional consumer configuration overrides.</param>
+    /// <param name="drainOnCancel">When true, a graceful stop (cancelling <paramref name="cancellationToken"/>, or an internal lifecycle event such as a membership change) drains the consumer (stop pulling, deliver buffered messages so handlers can ACK on the still-open connection) before the enumerable completes, instead of stopping immediately.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>An async enumerable of messages from the consumer group.</returns>
     public static async IAsyncEnumerable<INatsJSMsg<T>> ConsumePcgStaticAsync<T>(
@@ -107,6 +108,7 @@ public static class NatsPcgStaticExtensions
         string memberName,
         INatsDeserialize<T>? serializer = null,
         ConsumerConfig? config = null,
+        bool drainOnCancel = false,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var groupConfig = await GetPcgStaticConfigAsync(js, streamName, consumerGroupName, cancellationToken).ConfigureAwait(false);
@@ -123,7 +125,8 @@ public static class NatsPcgStaticExtensions
             memberName,
             groupConfig,
             serializer,
-            config);
+            config,
+            drainOnCancel);
 
         try
         {

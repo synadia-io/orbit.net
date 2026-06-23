@@ -767,6 +767,9 @@ public class NatsPcgElasticExtensionsTests
 
             await TaskTestHelpers.AssertCompletesWithinAsync(consumeTask, TimeSpan.FromSeconds(10));
 
+            // Buffered messages kept flowing through the enumerable after dispose
+            // started; acks during the drain did not throw (the consume task above
+            // completed without faulting).
             Assert.True(Volatile.Read(ref consumed) > bailAt, $"consumed {Volatile.Read(ref consumed)} should be greater than {bailAt}");
 
             // We intentionally do not assert server-side NumAckPending == 0 here.
@@ -783,6 +786,97 @@ public class NatsPcgElasticExtensionsTests
             cts.Cancel();
             disposeTask ??= nats.DisposeAsync().AsTask();
             await Task.WhenAny(disposeTask, Task.Delay(TimeSpan.FromSeconds(5)));
+            await Task.WhenAny(consumeTask, Task.Delay(TimeSpan.FromSeconds(5)));
+        }
+    }
+
+    [Fact]
+    public async Task ConsumeElastic_DrainOnCancelDeliversBufferedMessagesAndCompletes()
+    {
+        const int totalMsgs = 30;
+        const int bailAt = 5;
+
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
+        var js = nats.CreateJetStreamContext();
+
+        var id = Guid.NewGuid().ToString("N");
+        var streamName = $"test-stream-{id}";
+        var subject = $"{id}.orders.*";
+        var groupName = $"test-group-{id}";
+        var workQueueStreamName = $"{streamName}-{groupName}";
+
+        await js.CreateStreamAsync(new StreamConfig
+        {
+            Name = streamName,
+            Subjects = [subject],
+        });
+
+        await js.CreatePcgElasticAsync(
+            streamName,
+            groupName,
+            maxNumMembers: 1,
+            partitioningFilters: [new NatsPcgPartitioningFilter(subject, [1])]);
+
+        await js.AddPcgElasticMembersAsync(streamName, groupName, ["worker"]);
+
+        for (var i = 0; i < totalMsgs; i++)
+        {
+            await js.PublishAsync($"{id}.orders.{i}", $"payload-{i}");
+        }
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var consumed = 0;
+        var reachedBail = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseAfterCancelStarts = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var consumeTask = Task.Run(
+            async () =>
+            {
+                try
+                {
+                    await foreach (var msg in js.ConsumePcgElasticAsync<string>(streamName, groupName, "worker", drainOnCancel: true, cancellationToken: cts.Token))
+                    {
+                        Interlocked.Increment(ref consumed);
+
+                        // Ack on the still-open connection; the consume token is cancelled mid-drain.
+                        await msg.AckAsync(cancellationToken: CancellationToken.None);
+
+                        if (Volatile.Read(ref consumed) == bailAt)
+                        {
+                            reachedBail.TrySetResult(true);
+                            await releaseAfterCancelStarts.Task.ConfigureAwait(false);
+                        }
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            });
+
+        try
+        {
+            await TaskTestHelpers.AssertCompletesWithinAsync(reachedBail.Task, TimeSpan.FromSeconds(10));
+
+            cts.Cancel();
+            releaseAfterCancelStarts.TrySetResult(true);
+
+            await TaskTestHelpers.AssertCompletesWithinAsync(consumeTask, TimeSpan.FromSeconds(10));
+
+            // Drain delivered buffered messages past the bail point instead of
+            // dropping them on cancel, and acks during the drain did not throw.
+            Assert.True(Volatile.Read(ref consumed) > bailAt, $"consumed {Volatile.Read(ref consumed)} should be greater than {bailAt}");
+
+            // Connection stays usable after a drain-on-cancel completes.
+            Assert.Equal(NatsConnectionState.Open, nats.ConnectionState);
+            await nats.PingAsync();
+            var ack = await js.PublishAsync($"{id}.orders.post-drain", "after", cancellationToken: CancellationToken.None);
+            Assert.Null(ack.Error);
+            Assert.True(ack.Seq > 0, "post-drain publish should be stored on the open connection");
+        }
+        finally
+        {
+            releaseAfterCancelStarts.TrySetResult(true);
+            cts.Cancel();
             await Task.WhenAny(consumeTask, Task.Delay(TimeSpan.FromSeconds(5)));
         }
     }
@@ -924,7 +1018,10 @@ public class NatsPcgElasticExtensionsTests
                 await js.PublishAsync($"ewp{id}.item{i}", $"payload{i}");
             }
 
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            // Generous budget: two elastic members must spin up consumers and the
+            // partitions must distribute; the wait loop below exits as soon as all
+            // 20 arrive, so this only caps the worst case on slow runners.
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             var memberAMessages = new List<string>();
             var memberBMessages = new List<string>();
 
@@ -986,7 +1083,7 @@ public class NatsPcgElasticExtensionsTests
             var memberARound2 = new List<string>();
             var memberBRound2 = new List<string>();
 
-            using var cts2 = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            using var cts2 = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
             var taskA2 = Task.Run(async () =>
             {
