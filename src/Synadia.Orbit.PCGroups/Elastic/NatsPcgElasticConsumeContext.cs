@@ -32,6 +32,8 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
     private Task? _watchTask;
     private volatile bool _stopped;
     private volatile bool _needsRecreate;
+    private volatile string? _currentPinnedId;
+    private volatile CancellationTokenSource? _recreateCts;
     private string[] _currentFilters = Array.Empty<string>();
 
     public NatsPcgElasticConsumeContext(
@@ -123,6 +125,7 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
             }
 
             IAsyncEnumerable<INatsJSMsg<T>> messages;
+            CancellationTokenSource? consumeCts = null;
 
             try
             {
@@ -181,14 +184,22 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
                     DrainOnCancel = _drainOnCancel,
                 };
 
-                messages = _consumer.ConsumeAsync(_serializer, consumeOpts, linkedToken);
+                // Linked source so a membership change can interrupt an idle consume
+                // without tearing down the caller's or the context's cancellation.
+                consumeCts = CancellationTokenSource.CreateLinkedTokenSource(linkedToken);
+                _recreateCts = consumeCts;
+
+                messages = _consumer.ConsumeAsync(_serializer, consumeOpts, consumeCts.Token);
             }
             catch (OperationCanceledException) when (linkedToken.IsCancellationRequested)
             {
+                consumeCts?.Dispose();
                 yield break;
             }
             catch (NatsJSApiException ex) when (ex.Error.Code == 404)
             {
+                consumeCts?.Dispose();
+
                 // Consumer deleted - this is expected when membership changes
                 if (!_stopped && !linkedToken.IsCancellationRequested)
                 {
@@ -202,7 +213,7 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
             IAsyncEnumerator<INatsJSMsg<T>>? enumerator = null;
             try
             {
-                enumerator = messages.GetAsyncEnumerator(linkedToken);
+                enumerator = messages.GetAsyncEnumerator(consumeCts.Token);
                 while (true)
                 {
                     bool hasNext;
@@ -213,6 +224,11 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
                     catch (OperationCanceledException) when (linkedToken.IsCancellationRequested)
                     {
                         yield break;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Membership change interrupted an idle consume; re-evaluate
+                        break;
                     }
                     catch (NatsJSApiException ex) when (ex.Error.Code == 404)
                     {
@@ -254,16 +270,21 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
                     }
 
                     var msg = enumerator.Current;
+                    TrackPinnedId(msg);
                     string strippedSubject = NatsPcgMsg<T>.StripPartitionPrefix(msg.Subject);
                     yield return new NatsPcgMsg<T>((NatsJSMsg<T>)msg, strippedSubject);
                 }
             }
             finally
             {
+                _recreateCts = null;
+
                 if (enumerator != null)
                 {
                     await enumerator.DisposeAsync().ConfigureAwait(false);
                 }
+
+                consumeCts?.Dispose();
             }
         }
     }
@@ -282,20 +303,7 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
 
         string workQueueStreamName = NatsPcgElasticExtensions.GetWorkQueueStreamName(_streamName, _consumerGroupName);
 
-        // Each member gets its own consumer (named after the member)
-        string consumerName = _memberName;
-
-        var consumerConfig = new ConsumerConfig(consumerName)
-        {
-            AckPolicy = _userConfig?.AckPolicy ?? ConsumerConfigAckPolicy.Explicit,
-            AckWait = _userConfig?.AckWait ?? NatsPcgConstants.AckWait,
-            MaxDeliver = _userConfig?.MaxDeliver ?? -1,
-            FilterSubjects = filters,
-            PriorityGroups = new[] { NatsPcgConstants.PriorityGroupName },
-            PriorityPolicy = ConsumerConfigPriorityPolicy.PinnedClient,
-            PinnedTTL = NatsPcgConstants.ConsumerIdleTimeout,
-            InactiveThreshold = NatsPcgConstants.ConsumerIdleTimeout,
-        };
+        var consumerConfig = BuildConsumerConfig(filters);
 
         try
         {
@@ -304,7 +312,7 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
         catch (NatsJSApiException ex) when (ex.Error.Code == 400)
         {
             // Consumer might already exist with different filter - try to get it
-            _consumer = await _js.GetConsumerAsync(workQueueStreamName, consumerName, cancellationToken).ConfigureAwait(false);
+            _consumer = await _js.GetConsumerAsync(workQueueStreamName, _memberName, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -327,20 +335,49 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
         // Recalculate filters
         string[] filters = GenerateFiltersForMember(config, _memberName);
 
-        // Only recreate if filters changed
+        // Only recreate if filters changed. Unchanged filters mean this member's
+        // partition set is identical, so the existing consumer is still correct.
         if (FiltersEqual(filters, _currentFilters))
         {
             return;
         }
 
-        _currentFilters = filters;
-
+        // Just updating the filters on the existing consumer is not enough: a newly
+        // assigned partition may have messages at stream sequences the consumer has
+        // already advanced past, which would be silently skipped. The consumer must be
+        // deleted and recreated so it restarts from the correct position. Only the pinned
+        // member performs the delete; others back off so the pinned member wins the race
+        // and to avoid flapping. A consumer that is briefly missing or fails the
+        // not-unique check is a normal rebalance condition handled by retry/self-heal.
         string workQueueStreamName = NatsPcgElasticExtensions.GetWorkQueueStreamName(_streamName, _consumerGroupName);
 
-        // Each member gets its own consumer (named after the member)
-        string consumerName = _memberName;
+        bool isPinned = await IsCurrentlyPinnedAsync().ConfigureAwait(false);
 
-        var consumerConfig = new ConsumerConfig(consumerName)
+        if (isPinned)
+        {
+            try
+            {
+                await _js.DeleteConsumerAsync(workQueueStreamName, _memberName, _cts.Token).ConfigureAwait(false);
+            }
+            catch (NatsJSApiException ex) when (ex.Error.Code == 404)
+            {
+                // Already gone - normal during rebalance
+            }
+        }
+        else
+        {
+            // Give the pinned member a chance to delete and recreate first
+            await Task.Delay(GetMembershipBackoffDelay(), _cts.Token).ConfigureAwait(false);
+        }
+
+        _consumer = await TryCreateConsumerAsync(workQueueStreamName, filters).ConfigureAwait(false);
+        _currentFilters = filters;
+    }
+
+    private ConsumerConfig BuildConsumerConfig(string[] filters)
+    {
+        // Each member gets its own consumer (named after the member)
+        return new ConsumerConfig(_memberName)
         {
             AckPolicy = _userConfig?.AckPolicy ?? ConsumerConfigAckPolicy.Explicit,
             AckWait = _userConfig?.AckWait ?? NatsPcgConstants.AckWait,
@@ -351,8 +388,92 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
             PinnedTTL = NatsPcgConstants.ConsumerIdleTimeout,
             InactiveThreshold = NatsPcgConstants.ConsumerIdleTimeout,
         };
+    }
 
-        _consumer = await _js.CreateOrUpdateConsumerAsync(workQueueStreamName, consumerConfig, _cts.Token).ConfigureAwait(false);
+    // Mirrors the Go tryCreateConsumer: create with the desired config; if a consumer
+    // already exists (possibly with stale filters left by another member), delete it and
+    // create again so we end up with the correct position and filters.
+    private async Task<INatsJSConsumer> TryCreateConsumerAsync(string workQueueStreamName, string[] filters)
+    {
+        var consumerConfig = BuildConsumerConfig(filters);
+
+        try
+        {
+            return await _js.CreateConsumerAsync(workQueueStreamName, consumerConfig, _cts.Token).ConfigureAwait(false);
+        }
+        catch (NatsJSApiException ex) when (ex.Error.Code == 400 || ex.Error.ErrCode == NatsPcgConstants.WqConsumerNotUniqueErrCode)
+        {
+            try
+            {
+                await _js.DeleteConsumerAsync(workQueueStreamName, _memberName, _cts.Token).ConfigureAwait(false);
+            }
+            catch (NatsJSApiException delEx) when (delEx.Error.Code == 404)
+            {
+                // Already gone - fall through to recreate
+            }
+
+            return await _js.CreateConsumerAsync(workQueueStreamName, consumerConfig, _cts.Token).ConfigureAwait(false);
+        }
+    }
+
+    // Determines whether this member currently holds the pinned client slot, by comparing
+    // the pinned id last seen on a delivered message against the consumer's reported state.
+    private async Task<bool> IsCurrentlyPinnedAsync()
+    {
+        string? pinnedId = _currentPinnedId;
+        if (string.IsNullOrEmpty(pinnedId) || _consumer == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            await _consumer.RefreshAsync(_cts.Token).ConfigureAwait(false);
+        }
+        catch
+        {
+            // The consumer may not exist yet; treat as not pinned (matches Go)
+            return false;
+        }
+
+        var groups = _consumer.Info.PriorityGroups;
+        if (groups == null)
+        {
+            return false;
+        }
+
+        foreach (var group in groups)
+        {
+            if (group.Group == NatsPcgConstants.PriorityGroupName && group.PinnedClientId == pinnedId)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void TrackPinnedId(INatsJSMsg<T> msg)
+    {
+        if (msg.Headers != null && msg.Headers.TryGetValue(NatsPcgConstants.PinIdHeader, out var pinId) && pinId.Count > 0)
+        {
+            _currentPinnedId = pinId.ToString();
+        }
+    }
+
+    // Flags a membership-driven recreate and interrupts an idle/blocked consume so the
+    // consume loop re-evaluates promptly instead of waiting for the next message.
+    private void SignalRecreate()
+    {
+        _needsRecreate = true;
+        try
+        {
+            _recreateCts?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Consume loop already moved on; the flag will be picked up at the loop top
+        }
     }
 
     private static string[] GenerateFiltersForMember(NatsPcgElasticConfig config, string memberName)
@@ -442,8 +563,9 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
                                 break;
                             }
 
-                            // Signal that we need to check if consumer needs recreation
-                            _needsRecreate = true;
+                            // Signal that we need to check if consumer needs recreation,
+                            // interrupting an idle consume so the change is picked up promptly
+                            SignalRecreate();
                         }
                     }
                 }
@@ -504,6 +626,19 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
             delayMs = s_random.Next(
                 (int)NatsPcgConstants.MinReconnectDelay.TotalMilliseconds,
                 (int)NatsPcgConstants.MaxReconnectDelay.TotalMilliseconds);
+        }
+
+        return TimeSpan.FromMilliseconds(delayMs);
+    }
+
+    private static TimeSpan GetMembershipBackoffDelay()
+    {
+        int delayMs;
+        lock (s_random)
+        {
+            delayMs = s_random.Next(
+                (int)NatsPcgConstants.MembershipBackoffMin.TotalMilliseconds,
+                (int)NatsPcgConstants.MembershipBackoffMax.TotalMilliseconds);
         }
 
         return TimeSpan.FromMilliseconds(delayMs);

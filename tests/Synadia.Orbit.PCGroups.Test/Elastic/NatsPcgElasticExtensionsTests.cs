@@ -1141,6 +1141,116 @@ public class NatsPcgElasticExtensionsTests
         }
     }
 
+    [Fact]
+    public async Task ConsumeElastic_MemberGainingPartition_ReceivesMessagesBehindConsumerPosition()
+    {
+        // Regression for the membership-change skip bug: when a member gains a partition,
+        // updating the existing consumer's filters is not enough because the consumer may
+        // have already advanced its stream position past messages of the new partition.
+        // The consumer must be deleted and recreated so it rescans from the start.
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
+        var js = nats.CreateJetStreamContext();
+
+        var id = Guid.NewGuid().ToString("N");
+        var streamName = $"test-stream-{id}";
+
+        await js.CreateStreamAsync(new StreamConfig
+        {
+            Name = streamName,
+            Subjects = [$"mgp{id}.*"],
+        });
+
+        try
+        {
+            var groupName = $"test-group-{id}";
+
+            // 2 partitions, 2 members: A owns partition 0, B owns partition 1.
+            await js.CreatePcgElasticAsync(
+                streamName,
+                groupName,
+                maxNumMembers: 2,
+                partitioningFilters: [new NatsPcgPartitioningFilter($"mgp{id}.*", [1])]);
+
+            await js.AddPcgElasticMembersAsync(streamName, groupName, ["a", "b"]);
+
+            // Publish across many distinct keys so both partitions receive messages,
+            // interleaved so partition-1 messages sit before A's last partition-0 message.
+            const int messageCount = 60;
+            for (int i = 0; i < messageCount; i++)
+            {
+                await js.PublishAsync($"mgp{id}.key{i}", $"payload-{i}");
+            }
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(40));
+            var received = new System.Collections.Concurrent.ConcurrentDictionary<string, byte>();
+
+            // Only member A consumes; B is a member (so partition 1 is assigned to B and
+            // its messages accumulate unconsumed) but never starts a consumer.
+            var consumeTask = Task.Run(async () =>
+            {
+                try
+                {
+                    await foreach (var msg in js.ConsumePcgElasticAsync<string>(streamName, groupName, "a", cancellationToken: cts.Token))
+                    {
+                        received.TryAdd(msg.Data!, 0);
+                        await msg.AckAsync(cancellationToken: cts.Token);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            });
+
+            // Wait for A to drain its partition (partition 0): count climbs then stays
+            // flat. Once flat, A's consumer position has advanced past the partition-1
+            // messages still sitting in the work queue.
+            int stableCount = -1;
+            int stableFor = 0;
+            while (!cts.Token.IsCancellationRequested)
+            {
+                await Task.Delay(300, cts.Token);
+                int now = received.Count;
+                if (now == stableCount && now > 0)
+                {
+                    stableFor++;
+                    if (stableFor >= 5)
+                    {
+                        break;
+                    }
+                }
+                else
+                {
+                    stableCount = now;
+                    stableFor = 0;
+                }
+            }
+
+            int afterDrain = received.Count;
+            Assert.True(afterDrain > 0, "member a should have consumed its own partition");
+            Assert.True(afterDrain < messageCount, $"member a should not yet have all messages (got {afterDrain}); partition 1 belongs to b");
+
+            // Remove b: partition 1 is reassigned to a. a must now receive the messages
+            // that are behind its consumer position.
+            await js.DeletePcgElasticMembersAsync(streamName, groupName, ["b"]);
+
+            while (received.Count < messageCount && !cts.Token.IsCancellationRequested)
+            {
+                await Task.Delay(200, cts.Token);
+            }
+
+            cts.Cancel();
+            await consumeTask;
+
+            Assert.Equal(messageCount, received.Count);
+
+            await js.DeletePcgElasticAsync(streamName, groupName);
+        }
+        finally
+        {
+            await js.DeleteStreamAsync(streamName);
+        }
+    }
+
     private static async Task SkipBelow212Async(NatsConnection nats)
     {
         await nats.ConnectRetryAsync();
