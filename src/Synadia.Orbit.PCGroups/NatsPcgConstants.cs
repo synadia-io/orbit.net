@@ -29,10 +29,18 @@ internal static class NatsPcgConstants
     internal const string PinIdHeader = "Nats-Pin-Id";
 
     /// <summary>
-    /// JetStream API error code for a non-unique work queue consumer.
-    /// Can occur transiently while members converge on a membership change.
+    /// JetStream API error codes that mean a consumer with the requested name already
+    /// exists (with a different config, still active, or name in use) or that a filtered
+    /// work queue consumer would not be unique. All can occur transiently while members
+    /// converge on a membership change and are handled by delete-then-recreate.
     /// </summary>
-    internal const int WqConsumerNotUniqueErrCode = 10100;
+    internal static readonly int[] ConsumerCreateConflictErrCodes =
+    {
+        10148, // consumer already exists (CREATE with a different config)
+        10013, // consumer name already in use
+        10105, // consumer already exists and is still active
+        10100, // filtered consumer not unique on workqueue stream
+    };
 
     /// <summary>
     /// Default pull request timeout.

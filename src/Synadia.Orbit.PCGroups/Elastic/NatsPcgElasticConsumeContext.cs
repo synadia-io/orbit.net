@@ -213,7 +213,9 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
             IAsyncEnumerator<INatsJSMsg<T>>? enumerator = null;
             try
             {
-                enumerator = messages.GetAsyncEnumerator(consumeCts.Token);
+                // consumeCts is always assigned before messages is set above; the catch
+                // blocks all exit, so reaching here guarantees it is non-null.
+                enumerator = messages.GetAsyncEnumerator(consumeCts!.Token);
                 while (true)
                 {
                     bool hasNext;
@@ -363,6 +365,11 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
             {
                 // Already gone - normal during rebalance
             }
+
+            // The consumer is gone; drop the stale reference so that if the recreate
+            // below throws, the consume loop's self-heal path rejoins instead of
+            // consuming a deleted consumer and waiting for a 404 to retry.
+            _consumer = null;
         }
         else
         {
@@ -401,8 +408,10 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
         {
             return await _js.CreateConsumerAsync(workQueueStreamName, consumerConfig, _cts.Token).ConfigureAwait(false);
         }
-        catch (NatsJSApiException ex) when (ex.Error.Code == 400 || ex.Error.ErrCode == NatsPcgConstants.WqConsumerNotUniqueErrCode)
+        catch (NatsJSApiException ex) when (Array.IndexOf(NatsPcgConstants.ConsumerCreateConflictErrCodes, ex.Error.ErrCode) >= 0)
         {
+            // A consumer with this name already exists (stale filters left by us or
+            // another member). Delete it and create again with the desired config.
             try
             {
                 await _js.DeleteConsumerAsync(workQueueStreamName, _memberName, _cts.Token).ConfigureAwait(false);
@@ -412,6 +421,9 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
                 // Already gone - fall through to recreate
             }
 
+            // Second attempt. If another member races us and recreates the consumer in
+            // the window between delete and create, this throws; the outer consume loop
+            // catches it, backs off, and retries the recreate.
             return await _js.CreateConsumerAsync(workQueueStreamName, consumerConfig, _cts.Token).ConfigureAwait(false);
         }
     }
