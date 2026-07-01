@@ -24,6 +24,25 @@ internal static class NatsPcgConstants
     internal const string PriorityGroupName = "PCG";
 
     /// <summary>
+    /// Message header carrying the server-assigned pinned client id.
+    /// </summary>
+    internal const string PinIdHeader = "Nats-Pin-Id";
+
+    /// <summary>
+    /// JetStream API error codes that mean a consumer with the requested name already
+    /// exists (with a different config, still active, or name in use) or that a filtered
+    /// work queue consumer would not be unique. All can occur transiently while members
+    /// converge on a membership change and are handled by delete-then-recreate.
+    /// </summary>
+    internal static readonly int[] ConsumerCreateConflictErrCodes =
+    {
+        10148, // consumer already exists (CREATE with a different config)
+        10013, // consumer name already in use
+        10105, // consumer already exists and is still active
+        10100, // filtered consumer not unique on workqueue stream
+    };
+
+    /// <summary>
     /// Default pull request timeout.
     /// </summary>
     internal static readonly TimeSpan PullTimeout = TimeSpan.FromSeconds(3);
@@ -47,6 +66,17 @@ internal static class NatsPcgConstants
     /// Maximum delay for reconnect backoff.
     /// </summary>
     internal static readonly TimeSpan MaxReconnectDelay = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Minimum backoff a non-pinned member waits on a membership change,
+    /// giving the pinned member a chance to delete and recreate the consumer first.
+    /// </summary>
+    internal static readonly TimeSpan MembershipBackoffMin = TimeSpan.FromMilliseconds(400);
+
+    /// <summary>
+    /// Maximum backoff a non-pinned member waits on a membership change.
+    /// </summary>
+    internal static readonly TimeSpan MembershipBackoffMax = TimeSpan.FromMilliseconds(500);
 
     /// <summary>
     /// Interval for self-healing checks.
