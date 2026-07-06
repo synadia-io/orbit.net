@@ -101,7 +101,7 @@ public static class NatsPcgStaticExtensions
     /// <param name="drainOnCancel">When true, a graceful stop (cancelling <paramref name="cancellationToken"/>, or an internal lifecycle event such as a membership change) drains the consumer (stop pulling, deliver buffered messages so handlers can ACK on the still-open connection) before the enumerable completes, instead of stopping immediately.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>An async enumerable of messages from the consumer group.</returns>
-    public static async IAsyncEnumerable<INatsJSMsg<T>> ConsumePcgStaticAsync<T>(
+    public static async IAsyncEnumerable<NatsPcgMsg<T>> ConsumePcgStaticAsync<T>(
         this INatsJSContext js,
         string streamName,
         string consumerGroupName,

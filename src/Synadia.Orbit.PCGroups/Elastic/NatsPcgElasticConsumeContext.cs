@@ -311,9 +311,11 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
         {
             _consumer = await _js.CreateOrUpdateConsumerAsync(workQueueStreamName, consumerConfig, cancellationToken).ConfigureAwait(false);
         }
-        catch (NatsJSApiException ex) when (ex.Error.Code == 400)
+        catch (NatsJSApiException ex) when (Array.IndexOf(NatsPcgConstants.ConsumerCreateConflictErrCodes, ex.Error.ErrCode) >= 0)
         {
-            // Consumer might already exist with different filter - try to get it
+            // Consumer might already exist with different filter - try to get it. Match the
+            // specific conflict codes rather than any HTTP 400 so a genuine bad-request is not
+            // swallowed and re-surfaced as a misleading 404 from the get.
             _consumer = await _js.GetConsumerAsync(workQueueStreamName, _memberName, cancellationToken).ConfigureAwait(false);
         }
     }
@@ -608,6 +610,9 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
         }
     }
 
+    // Ordered element-wise comparison. This relies on GeneratePartitionFilters producing
+    // filters in a stable order for a given partition set; if that ever stops holding, a
+    // reordered-but-equal set would trigger a spurious delete-and-recreate.
     private static bool FiltersEqual(string[] a, string[] b)
     {
         if (a.Length != b.Length)
