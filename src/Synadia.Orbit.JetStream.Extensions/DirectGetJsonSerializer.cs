@@ -3,6 +3,7 @@
 
 using System.Text.Json.Serialization;
 using NATS.Client.Core;
+using NATS.Client.JetStream.Models;
 using Synadia.Orbit.JetStream.Extensions.Models;
 
 namespace Synadia.Orbit.JetStream.Extensions;
@@ -27,8 +28,9 @@ public static class DirectGetJsonSerializer<T>
 /// <summary>
 /// Represents a source-generated JSON serialization context for the Direct Get module,
 /// specifically configured for serializing and deserializing types such as
-/// <see cref="StreamMsgBatchGetRequest"/>. This context is internally used for efficient
+/// <see cref="StreamMsgBatchGetRequest"/> and <see cref="StreamMsgGetRequest"/>. This context is internally used for efficient
 /// JSON processing within the module.
 /// </summary>
 [JsonSerializable(typeof(StreamMsgBatchGetRequest))]
+[JsonSerializable(typeof(StreamMsgGetRequest))]
 internal partial class DirectGetJsonSerializerContext : JsonSerializerContext;
