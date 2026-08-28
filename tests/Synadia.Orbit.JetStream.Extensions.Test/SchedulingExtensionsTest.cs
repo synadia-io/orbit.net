@@ -931,12 +931,16 @@ public class SchedulingExtensionsTest
 
         ack.EnsureSuccess();
 
-        await Task.Delay(TimeSpan.FromSeconds(3), ct);
-
         var stream = await js.GetStreamAsync($"{prefix}s1", cancellationToken: ct);
-        await stream.RefreshAsync(ct);
+        await WaitUntilAsync(
+            async () =>
+            {
+                await stream.RefreshAsync(ct).ConfigureAwait(false);
+                return stream.Info.State.LastSeq >= 4;
+            },
+            TimeSpan.FromSeconds(10),
+            ct);
 
-        Assert.True(stream.Info.State.LastSeq >= 4, $"expected at least two firings, LastSeq={stream.Info.State.LastSeq}");
         Assert.Equal(2, stream.Info.State.Messages);
 
         var msg = await stream.GetDirectAsync<string>(

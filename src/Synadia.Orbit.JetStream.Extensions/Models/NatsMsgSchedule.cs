@@ -176,7 +176,7 @@ public record NatsMsgSchedule
     /// When set, the fired message carries <c>Nats-Rollup: sub</c>, so it replaces all prior
     /// messages on <see cref="Target"/> and the target keeps only the latest firing.
     /// The stream must allow rollups, which it always does when it allows schedules: the server
-    /// enables <c>AllowRollup</c> and clears <c>DenyPurge</c> whenever <c>AllowMsgSchedules</c>
+    /// enables <c>AllowRollupHdrs</c> and clears <c>DenyPurge</c> whenever <c>AllowMsgSchedules</c>
     /// is set, and rejects the combination outright in pedantic mode.
     /// </remarks>
     public bool RollupSubject { get; init; }
