@@ -56,6 +56,7 @@ for the full specification. The stream must have `AllowMsgSchedules = true`.
 | Data sampling | `NatsMsgSchedule(TimeSpan, target) { Source = ... }` | set | 2.14+ |
 | Cron schedule | `NatsMsgSchedule.Cron("0 0 * * * *", target)` | null | 2.14+ |
 | Predefined schedule | `NatsMsgSchedule.Hourly(target)` etc. | null | 2.14+ |
+| Latest-value target | `NatsMsgSchedule(TimeSpan, target) { RollupSubject = true }` | null | 2.14+ |
 
 ### Delayed Publish (NATS Server 2.12+)
 
@@ -181,6 +182,23 @@ Accepted `TimeZone` values: an IANA name (`America/New_York`, `Europe/Amsterdam`
 not accepted. The server resolves IANA names against its host's tzdata, so operators must keep
 tzdata installed and current. Setting `TimeZone` on an `@at` or `@every` schedule throws on
 `ToHeaders()`.
+
+### Rollup (NATS Server 2.14+)
+
+Set `RollupSubject` to make each fired message replace all prior messages on the target subject,
+so the target keeps only the latest firing:
+
+```csharp
+var schedule = new NatsMsgSchedule(TimeSpan.FromMinutes(1), "sensors.latest")
+{
+    Source = "sensors.raw",
+    RollupSubject = true,
+};
+```
+
+Rollups have to be allowed on the stream, which they always are when schedules are: the server
+sets `AllowRollupHdrs` and clears `DenyPurge` whenever `AllowMsgSchedules` is set, and rejects the
+combination outright in pedantic mode.
 
 ### TTL Options
 

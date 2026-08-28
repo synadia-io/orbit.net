@@ -27,6 +27,7 @@ public record NatsMsgSchedule
     private const string NatsScheduleSourceHeader = "Nats-Schedule-Source";
     private const string NatsScheduleTtlHeader = "Nats-Schedule-TTL";
     private const string NatsScheduleTimeZoneHeader = "Nats-Schedule-Time-Zone";
+    private const string NatsScheduleRollupHeader = "Nats-Schedule-Rollup";
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NatsMsgSchedule"/> class with a one-time <c>@at</c> schedule.
@@ -168,6 +169,19 @@ public record NatsMsgSchedule
     public string? TimeZone { get; init; }
 
     /// <summary>
+    /// Gets a value indicating whether the message produced when the schedule fires rolls up
+    /// the target subject. Requires NATS Server 2.14 or later.
+    /// </summary>
+    /// <remarks>
+    /// When set, the fired message carries <c>Nats-Rollup: sub</c>, so it replaces all prior
+    /// messages on <see cref="Target"/> and the target keeps only the latest firing.
+    /// The stream must allow rollups, which it always does when it allows schedules: the server
+    /// enables <c>AllowRollup</c> and clears <c>DenyPurge</c> whenever <c>AllowMsgSchedules</c>
+    /// is set, and rejects the combination outright in pedantic mode.
+    /// </remarks>
+    public bool RollupSubject { get; init; }
+
+    /// <summary>
     /// Creates a schedule from a cron expression. Requires NATS Server 2.14 or later.
     /// </summary>
     /// <param name="cron">A 6-field cron expression (seconds minutes hours day-of-month month day-of-week).
@@ -250,6 +264,11 @@ public record NatsMsgSchedule
             }
 
             headers[NatsScheduleTimeZoneHeader] = timeZone;
+        }
+
+        if (RollupSubject)
+        {
+            headers[NatsScheduleRollupHeader] = "sub";
         }
 
         if (Ttl is { } ttl)

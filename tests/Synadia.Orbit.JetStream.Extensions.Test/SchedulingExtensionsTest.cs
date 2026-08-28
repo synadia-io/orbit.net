@@ -794,6 +794,158 @@ public class SchedulingExtensionsTest
         Assert.False(msg.Headers.ContainsKey("Nats-Schedule-Source"));
     }
 
+    [Fact]
+    public void NatsMsgSchedule_ToHeaders_sets_rollup_header()
+    {
+        var at = new NatsMsgSchedule(DateTimeOffset.UtcNow.AddMinutes(5), "events.target") { RollupSubject = true };
+        var every = new NatsMsgSchedule(TimeSpan.FromMinutes(5), "events.target") { RollupSubject = true };
+        var raw = new NatsMsgSchedule("@hourly", "events.target") { RollupSubject = true };
+        var cron = NatsMsgSchedule.Cron("0 0 * * * *", "events.target") with { RollupSubject = true };
+
+        Assert.Equal("sub", at.ToHeaders()["Nats-Schedule-Rollup"]);
+        Assert.Equal("sub", every.ToHeaders()["Nats-Schedule-Rollup"]);
+        Assert.Equal("sub", raw.ToHeaders()["Nats-Schedule-Rollup"]);
+        Assert.Equal("sub", cron.ToHeaders()["Nats-Schedule-Rollup"]);
+    }
+
+    [Fact]
+    public void NatsMsgSchedule_ToHeaders_omits_rollup_header_by_default()
+    {
+        var at = new NatsMsgSchedule(DateTimeOffset.UtcNow.AddMinutes(5), "events.target");
+        var every = new NatsMsgSchedule(TimeSpan.FromMinutes(5), "events.target");
+        var cron = NatsMsgSchedule.Cron("0 0 * * * *", "events.target");
+
+        Assert.False(at.ToHeaders().ContainsKey("Nats-Schedule-Rollup"));
+        Assert.False(every.ToHeaders().ContainsKey("Nats-Schedule-Rollup"));
+        Assert.False(cron.ToHeaders().ContainsKey("Nats-Schedule-Rollup"));
+    }
+
+    [Fact]
+    public async Task Schedule_rollup_should_replace_previous_target_messages()
+    {
+        await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await connection.ConnectRetryAsync();
+
+        if (!connection.HasMinServerVersion(2, 14))
+        {
+            _output.WriteLine($"Skipping test - server version {connection.ServerInfo?.Version} does not support schedule rollup (requires 2.14+)");
+            return;
+        }
+
+        INatsJSContext js = connection.CreateJetStreamContext();
+        string prefix = _server.GetNextId();
+
+        CancellationToken ct = TestContext.Current.CancellationToken;
+
+        var streamConfig = new StreamConfig($"{prefix}s1", [$"{prefix}foo.*"])
+        {
+            AllowMsgSchedules = true,
+            AllowRollupHdrs = true,
+            AllowDirect = true,
+        };
+
+        await js.CreateStreamAsync(streamConfig, ct);
+
+        // seq 1: a message on the target subject that the first firing should roll up.
+        var previous = await js.PublishAsync($"{prefix}foo.publish", "previous", cancellationToken: ct);
+        previous.EnsureSuccess();
+
+        // seq 2: the schedule itself, firing every second.
+        var schedule = new NatsMsgSchedule(TimeSpan.FromSeconds(1), $"{prefix}foo.publish")
+        {
+            RollupSubject = true,
+        };
+
+        var ack = await js.PublishScheduledAsync(
+            $"{prefix}foo.schedule",
+            "rolled-up",
+            schedule,
+            cancellationToken: ct);
+
+        ack.EnsureSuccess();
+
+        var stream = await js.GetStreamAsync($"{prefix}s1", cancellationToken: ct);
+
+        // seq 3 and 4 are two firings. After the second, the stream holds only the
+        // schedule and the last fired message: the rollup purged seq 1 and seq 3.
+        await WaitUntilAsync(
+            async () =>
+            {
+                await stream.RefreshAsync(ct).ConfigureAwait(false);
+                return stream.Info.State.LastSeq >= 4;
+            },
+            TimeSpan.FromSeconds(10),
+            ct);
+
+        Assert.Equal(2, stream.Info.State.Messages);
+
+        var msg = await stream.GetDirectAsync<string>(
+            new StreamMsgGetRequest { LastBySubj = $"{prefix}foo.publish" },
+            cancellationToken: ct);
+
+        Assert.Equal("rolled-up", msg.Data);
+    }
+
+    [Fact]
+    public async Task Schedule_rollup_works_without_setting_allow_rollup()
+    {
+        await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await connection.ConnectRetryAsync();
+
+        if (!connection.HasMinServerVersion(2, 14))
+        {
+            _output.WriteLine($"Skipping test - server version {connection.ServerInfo?.Version} does not support schedule rollup (requires 2.14+)");
+            return;
+        }
+
+        INatsJSContext js = connection.CreateJetStreamContext();
+        string prefix = _server.GetNextId();
+
+        CancellationToken ct = TestContext.Current.CancellationToken;
+
+        var streamConfig = new StreamConfig($"{prefix}s1", [$"{prefix}foo.*"])
+        {
+            AllowMsgSchedules = true,
+            AllowDirect = true,
+        };
+
+        // AllowRollupHdrs is left off: the server turns it on because schedules are enabled,
+        // so a schedules stream can always carry a rollup.
+        var created = await js.CreateStreamAsync(streamConfig, ct);
+        Assert.True(created.Info.Config.AllowRollupHdrs);
+        Assert.False(created.Info.Config.DenyPurge);
+
+        var previous = await js.PublishAsync($"{prefix}foo.publish", "previous", cancellationToken: ct);
+        previous.EnsureSuccess();
+
+        var schedule = new NatsMsgSchedule(TimeSpan.FromSeconds(1), $"{prefix}foo.publish")
+        {
+            RollupSubject = true,
+        };
+
+        var ack = await js.PublishScheduledAsync(
+            $"{prefix}foo.schedule",
+            "rolled-up",
+            schedule,
+            cancellationToken: ct);
+
+        ack.EnsureSuccess();
+
+        await Task.Delay(TimeSpan.FromSeconds(3), ct);
+
+        var stream = await js.GetStreamAsync($"{prefix}s1", cancellationToken: ct);
+        await stream.RefreshAsync(ct);
+
+        Assert.True(stream.Info.State.LastSeq >= 4, $"expected at least two firings, LastSeq={stream.Info.State.LastSeq}");
+        Assert.Equal(2, stream.Info.State.Messages);
+
+        var msg = await stream.GetDirectAsync<string>(
+            new StreamMsgGetRequest { LastBySubj = $"{prefix}foo.publish" },
+            cancellationToken: ct);
+
+        Assert.Equal("rolled-up", msg.Data);
+    }
+
     private static async Task WaitUntilAsync(Func<Task<bool>> condition, TimeSpan timeout, CancellationToken ct)
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
