@@ -5,6 +5,7 @@ using System.Buffers;
 using System.Text;
 using Microsoft.Extensions.Primitives;
 using NATS.Client.Core;
+using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
 
 namespace Synadia.Orbit.JetStream.Extensions;
@@ -31,6 +32,7 @@ public readonly record struct NatsStreamMsg<T>(
     /// <returns>A <see cref="NatsStreamMsg{T}"/> containing the message data and metadata.</returns>
     /// <exception cref="ArgumentNullException">The <paramref name="msg"/> is null.</exception>
     /// <exception cref="NatsJSNoMessageFoundException">The message was not found (404).</exception>
+    /// <exception cref="NatsJSException">The server responded with an error status other than 404, or the message headers are malformed.</exception>
     public static NatsStreamMsg<T> FromDirect(NatsMsg<T> msg)
     {
         if (EqualityComparer<NatsMsg<T>>.Default.Equals(msg, default))
@@ -38,9 +40,20 @@ public readonly record struct NatsStreamMsg<T>(
             throw new ArgumentNullException(nameof(msg));
         }
 
-        if (msg.Headers is { Code: 404 })
+        if (msg.Headers is { Code: var code } && code != 0)
         {
-            throw new NatsJSNoMessageFoundException();
+            if (code == 404)
+            {
+                throw new NatsJSNoMessageFoundException();
+            }
+
+            msg.Headers.TryGetLastValue("Description", out string? description);
+            throw new NatsJSException(!string.IsNullOrEmpty(description) ? description : msg.Headers.MessageText);
+        }
+
+        if (msg.Headers is { Error: { } error })
+        {
+            throw error;
         }
 
         string subject = msg.Subject;
@@ -49,20 +62,30 @@ public readonly record struct NatsStreamMsg<T>(
 
         if (msg.Headers is { } headers)
         {
-            if (headers.TryGetLastValue(NatsSubjectHeader, out var subjectFromHeaders))
+            if (headers.TryGetLastValue(NatsSubjectHeader, out string? subjectFromHeaders))
             {
                 subject = subjectFromHeaders;
             }
 
             var sequenceStringFromHeaders = headers[NatsSequenceHeader];
-            if (!StringValues.IsNullOrEmpty(sequenceStringFromHeaders) && ulong.TryParse(sequenceStringFromHeaders, out var sequenceFromHeaders))
+            if (!StringValues.IsNullOrEmpty(sequenceStringFromHeaders))
             {
+                if (!ulong.TryParse(sequenceStringFromHeaders, out ulong sequenceFromHeaders))
+                {
+                    throw new NatsJSException($"Invalid {NatsSequenceHeader} header value: {sequenceStringFromHeaders}");
+                }
+
                 sequence = sequenceFromHeaders;
             }
 
             var timeStringFromHeaders = headers[NatsTimeStampHeader];
-            if (!StringValues.IsNullOrEmpty(timeStringFromHeaders) && DateTimeOffset.TryParse(timeStringFromHeaders, out var timeFromHeaders))
+            if (!StringValues.IsNullOrEmpty(timeStringFromHeaders))
             {
+                if (!DateTimeOffset.TryParse(timeStringFromHeaders, out var timeFromHeaders))
+                {
+                    throw new NatsJSException($"Invalid {NatsTimeStampHeader} header value: {timeStringFromHeaders}");
+                }
+
                 time = timeFromHeaders;
             }
         }
@@ -90,13 +113,14 @@ public readonly record struct NatsStreamMsg<T>(
         }
 
         var message = response.Message;
+
         var data = message.Data.IsEmpty ? default : serializer.Deserialize(new ReadOnlySequence<byte>(message.Data), new NatsMsgContext(message.Subject));
         var headers = !string.IsNullOrEmpty(message.Hdrs) ? ParseHeaders(message.Hdrs) : null;
 
         return new NatsStreamMsg<T>(data, message.Seq, message.Subject, message.Time, headers);
     }
 
-    private static NatsHeaders? ParseHeaders(string hdrs)
+    private static NatsHeaders? ParseHeaders(string? hdrs)
     {
         if (string.IsNullOrEmpty(hdrs))
         {
@@ -111,6 +135,6 @@ public readonly record struct NatsStreamMsg<T>(
             return headers;
         }
 
-        return null;
+        throw new NatsJSException("Failed to parse message headers");
     }
 }

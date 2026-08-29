@@ -79,16 +79,22 @@ public static class JetStreamExtensions
 
         if (stream.Info.Config.AllowDirect)
         {
-            var msg = await context.Connection.RequestAsync(
-                subject: $"{context.Opts.Prefix}.DIRECT.GET.{streamName}",
-                data: request,
-                requestSerializer: DirectGetJsonSerializer<StreamMsgGetRequest>.Default,
-                replySerializer: serializer,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            if (msg.Headers is not { Code: 404 })
+            try
             {
+                var msg = await context.Connection.RequestAsync<StreamMsgGetRequest, T>(
+                    subject: $"{context.Opts.Prefix}.DIRECT.GET.{streamName}",
+                    data: request,
+                    requestSerializer: DirectGetJsonSerializer<StreamMsgGetRequest>.Default,
+                    replySerializer: serializer,
+                    replyOpts: new NatsSubOpts { ThrowIfNoResponders = true },
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+
                 return NatsStreamMsg<T>.FromDirect(msg);
+            }
+            catch (NatsNoRespondersException)
+            {
+                // Race condition: AllowDirect was true but server no longer supports direct get.
+                // Fall back to the standard stream get API.
             }
         }
 

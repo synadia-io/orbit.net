@@ -40,7 +40,7 @@ public class GetAutoAsyncTest(NatsServerFixture server)
     }
 
     [Fact]
-    public async Task GetAutoAsync_WithAllowDirectAndMissingSeq_FallsBackToStreamGet()
+    public async Task GetAutoAsync_WithAllowDirectAndMissingSeq_ThrowsNoMessageFound()
     {
         await using var nats = new NatsConnection(new NatsOpts { Url = server.Url });
         await nats.ConnectRetryAsync();
@@ -55,7 +55,7 @@ public class GetAutoAsyncTest(NatsServerFixture server)
             new StreamConfig($"{prefix}S1", [$"{prefix}s1"]) { AllowDirect = true },
             cancellationToken: cts.Token);
 
-        await Assert.ThrowsAsync<NatsJSApiException>(async () =>
+        await Assert.ThrowsAsync<NatsJSNoMessageFoundException>(async () =>
             await js.GetAutoAsync<string>(
                 stream,
                 new StreamMsgGetRequest { Seq = 999 },
@@ -120,7 +120,7 @@ public class GetAutoAsyncTest(NatsServerFixture server)
     }
 
     [Fact]
-    public async Task GetAutoAsync_WithLastBySubjMissing_FallsBackToStreamGet()
+    public async Task GetAutoAsync_WithLastBySubjMissing_ThrowsNoMessageFound()
     {
         await using var nats = new NatsConnection(new NatsOpts { Url = server.Url });
         await nats.ConnectRetryAsync();
@@ -135,7 +135,7 @@ public class GetAutoAsyncTest(NatsServerFixture server)
             new StreamConfig($"{prefix}S1", [$"{prefix}s1"]) { AllowDirect = true },
             cancellationToken: cts.Token);
 
-        await Assert.ThrowsAsync<NatsJSApiException>(async () =>
+        await Assert.ThrowsAsync<NatsJSNoMessageFoundException>(async () =>
             await js.GetAutoAsync<string>(
                 stream,
                 new StreamMsgGetRequest { LastBySubj = $"{prefix}nonexistent" },
