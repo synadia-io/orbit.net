@@ -268,11 +268,31 @@ public class NatsStreamMsgTests
     }
 
     [Fact]
+    public void FromStreamResponse_Base64Headers_AreDecoded()
+    {
+        var response = StreamResponse(Convert.ToBase64String("NATS/1.0\r\nX-Test: abc\r\n\r\n"u8.ToArray()));
+
+        var result = NatsStreamMsg<string>.FromStreamResponse(response, DirectGetJsonSerializer<string>.Default);
+
+        Assert.NotNull(result.Headers);
+        Assert.Equal("abc", result.Headers!["X-Test"]);
+    }
+
+    [Fact]
     public void FromStreamResponse_MalformedBase64Headers_ThrowsNatsJSException()
     {
         var response = StreamResponse("!!!not base64!!!");
 
         Assert.Throws<NatsJSException>(() =>
+            NatsStreamMsg<string>.FromStreamResponse(response, DirectGetJsonSerializer<string>.Default));
+    }
+
+    [Fact]
+    public void FromStreamResponse_UnparsableHeaders_ThrowsNatsException()
+    {
+        var response = StreamResponse(Convert.ToBase64String("this is not a header block"u8.ToArray()));
+
+        Assert.ThrowsAny<NatsException>(() =>
             NatsStreamMsg<string>.FromStreamResponse(response, DirectGetJsonSerializer<string>.Default));
     }
 
