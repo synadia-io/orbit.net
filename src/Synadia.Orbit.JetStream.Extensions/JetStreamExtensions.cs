@@ -15,6 +15,8 @@ namespace Synadia.Orbit.JetStream.Extensions;
 /// </summary>
 public static class JetStreamExtensions
 {
+    private const int JSErrCodeMessageNotFound = 10037;
+
     /// <summary>
     /// Request a direct batch message.
     /// </summary>
@@ -50,6 +52,95 @@ public static class JetStreamExtensions
 
             yield return msg;
         }
+    }
+
+    /// <summary>
+    /// Retrieves a message from the stream using direct get if the stream allows it, falling back to the standard stream get API.
+    /// </summary>
+    /// <param name="context">JetStream Context.</param>
+    /// <param name="stream">The JetStream stream.</param>
+    /// <param name="request">The request specifying which message to retrieve.</param>
+    /// <param name="serializer">The deserializer to use for the message data.</param>
+    /// <param name="cancellationToken">A <see cref="CancellationToken"/> used to cancel the API call.</param>
+    /// <typeparam name="T">The type to deserialize the message data into.</typeparam>
+    /// <returns>A <see cref="NatsStreamMsg{T}"/> containing the message data and metadata.</returns>
+    /// <exception cref="NatsJSNoMessageFoundException">The message was not found.</exception>
+    /// <exception cref="NatsJSException">There was an issue retrieving the response.</exception>
+    /// <exception cref="NatsJSApiException">Server responded with an error.</exception>
+    public static async ValueTask<NatsStreamMsg<T>> GetAutoAsync<T>(
+        this INatsJSContext context,
+        INatsJSStream stream,
+        StreamMsgGetRequest request,
+        INatsDeserialize<T>? serializer = default,
+        CancellationToken cancellationToken = default)
+    {
+        serializer ??= context.Connection.Opts.SerializerRegistry.GetDeserializer<T>();
+
+        var streamName = stream.Info.Config.Name
+            ?? throw new NatsJSException("Stream name is not available");
+
+        if (stream.Info.Config.AllowDirect)
+        {
+            try
+            {
+                var msg = await context.Connection.RequestAsync<StreamMsgGetRequest, T>(
+                    subject: $"{context.Opts.Prefix}.DIRECT.GET.{streamName}",
+                    data: request,
+                    requestSerializer: DirectGetJsonSerializer<StreamMsgGetRequest>.Default,
+                    replySerializer: serializer,
+                    replyOpts: new NatsSubOpts { ThrowIfNoResponders = true },
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+
+                return NatsStreamMsg<T>.FromDirect(msg);
+            }
+            catch (NatsNoRespondersException)
+            {
+                // Race condition: AllowDirect was true but server no longer supports direct get.
+                // Fall back to the standard stream get API.
+            }
+        }
+
+        StreamMsgGetResponse response;
+        try
+        {
+            response = await context.JSRequestResponseAsync<StreamMsgGetRequest, StreamMsgGetResponse>(
+                subject: $"{context.Opts.Prefix}.STREAM.MSG.GET.{streamName}",
+                request: request,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        catch (NatsJSApiException e) when (e.Error.ErrCode == JSErrCodeMessageNotFound)
+        {
+            // The direct get path reports a missing message as NatsJSNoMessageFoundException,
+            // so report it the same way here rather than letting the exception type depend on
+            // whether the stream happens to allow direct get.
+            throw new NatsJSNoMessageFoundException();
+        }
+
+        return NatsStreamMsg<T>.FromStreamResponse(response, serializer);
+    }
+
+    /// <summary>
+    /// Retrieves a message from the stream using direct get if the stream allows it, falling back to the standard stream get API.
+    /// </summary>
+    /// <param name="context">JetStream Context.</param>
+    /// <param name="stream">The name of the JetStream stream.</param>
+    /// <param name="request">The request specifying which message to retrieve.</param>
+    /// <param name="serializer">The deserializer to use for the message data.</param>
+    /// <param name="cancellationToken">A <see cref="CancellationToken"/> used to cancel the API call.</param>
+    /// <typeparam name="T">The type to deserialize the message data into.</typeparam>
+    /// <returns>A <see cref="NatsStreamMsg{T}"/> containing the message data and metadata.</returns>
+    /// <exception cref="NatsJSNoMessageFoundException">The message was not found.</exception>
+    /// <exception cref="NatsJSException">There was an issue retrieving the response.</exception>
+    /// <exception cref="NatsJSApiException">Server responded with an error.</exception>
+    public static async ValueTask<NatsStreamMsg<T>> GetAutoAsync<T>(
+        this INatsJSContext context,
+        string stream,
+        StreamMsgGetRequest request,
+        INatsDeserialize<T>? serializer = default,
+        CancellationToken cancellationToken = default)
+    {
+        var streamObj = await context.GetStreamAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+        return await GetAutoAsync(context, streamObj, request, serializer, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
