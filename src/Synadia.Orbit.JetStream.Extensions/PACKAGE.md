@@ -36,6 +36,57 @@ await foreach (NatsMsg<int> msg in js.GetBatchDirectAsync<int>(name, request, ca
 
 Assert.Equal(8, count);
 ```
+## Get with automatic API selection
+
+`GetAutoAsync` retrieves a single message, choosing between the direct get API and
+`STREAM.MSG.GET` based on the stream's `AllowDirect` setting. Direct get is served by
+any replica and does not go through the stream leader, so it is the cheaper path when
+the stream allows it.
+
+The result is a `NatsStreamMsg<T>`, which carries the stored message's subject,
+sequence and timestamp regardless of which API answered. A message that does not
+exist throws `NatsJSNoMessageFoundException` on both paths.
+
+```csharp
+// dotnet add package nats.net
+// dotnet add package Synadia.Orbit.JetStream.Extensions --prerelease
+await using var client = new NatsClient();
+INatsJSContext js = client.CreateJetStreamContext();
+
+INatsJSStream stream = await js.CreateStreamAsync(
+    new StreamConfig(name, [subject]) { AllowDirect = true },
+    cancellationToken: ct);
+
+await js.PublishAsync(subject: subject, "hello", cancellationToken: ct);
+
+// By sequence
+NatsStreamMsg<string> bySeq = await js.GetAutoAsync<string>(
+    stream,
+    new StreamMsgGetRequest { Seq = 1 },
+    cancellationToken: ct);
+
+Console.WriteLine($"GetAutoAsync: {bySeq.Data} seq={bySeq.Sequence} subject={bySeq.Subject}");
+
+// Last message on a subject
+NatsStreamMsg<string> last = await js.GetAutoAsync<string>(
+    stream,
+    new StreamMsgGetRequest { LastBySubj = subject },
+    cancellationToken: ct);
+
+Console.WriteLine($"GetAutoAsync: {last.Data}");
+```
+
+There is also an overload taking the stream name instead of an `INatsJSStream`. It
+looks the stream up first, so it costs an extra `STREAM.INFO` request per call. Pass a
+stream handle when retrieving more than one message.
+
+```csharp
+NatsStreamMsg<string> msg = await js.GetAutoAsync<string>(
+    name,
+    new StreamMsgGetRequest { Seq = 1 },
+    cancellationToken: ct);
+```
+
 ## Scheduled Messages
 
 A stream can be configured to allow scheduled messages. A scheduled message is a message published
