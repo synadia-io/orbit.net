@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System.Buffers;
+using System.Globalization;
 using System.Text;
 using Microsoft.Extensions.Primitives;
 using NATS.Client.Core;
@@ -32,7 +33,7 @@ public readonly record struct NatsStreamMsg<T>(
     /// <returns>A <see cref="NatsStreamMsg{T}"/> containing the message data and metadata.</returns>
     /// <exception cref="ArgumentNullException">The <paramref name="msg"/> is null.</exception>
     /// <exception cref="NatsJSNoMessageFoundException">The message was not found (404).</exception>
-    /// <exception cref="NatsJSException">The server responded with an error status other than 404, or the message headers are malformed.</exception>
+    /// <exception cref="NatsJSException">The server responded with an error status other than 404, or the response is missing the Nats-Subject, Nats-Sequence or Nats-Time-Stamp header needed to reconstruct the message.</exception>
     public static NatsStreamMsg<T> FromDirect(NatsMsg<T> msg)
     {
         if (EqualityComparer<NatsMsg<T>>.Default.Equals(msg, default))
@@ -56,41 +57,41 @@ public readonly record struct NatsStreamMsg<T>(
             throw error;
         }
 
-        string subject = msg.Subject;
-        ulong sequence = 0UL;
-        var time = default(DateTimeOffset);
-
-        if (msg.Headers is { } headers)
+        // The direct get response carries the stored message's identity in headers only, so
+        // every one of them has to be there for the message to be reconstructed at all.
+        if (msg.Headers is not { } headers)
         {
-            if (headers.TryGetLastValue(NatsSubjectHeader, out string? subjectFromHeaders))
-            {
-                subject = subjectFromHeaders;
-            }
-
-            var sequenceStringFromHeaders = headers[NatsSequenceHeader];
-            if (!StringValues.IsNullOrEmpty(sequenceStringFromHeaders))
-            {
-                if (!ulong.TryParse(sequenceStringFromHeaders, out ulong sequenceFromHeaders))
-                {
-                    throw new NatsJSException($"Invalid {NatsSequenceHeader} header value: {sequenceStringFromHeaders}");
-                }
-
-                sequence = sequenceFromHeaders;
-            }
-
-            var timeStringFromHeaders = headers[NatsTimeStampHeader];
-            if (!StringValues.IsNullOrEmpty(timeStringFromHeaders))
-            {
-                if (!DateTimeOffset.TryParse(timeStringFromHeaders, out var timeFromHeaders))
-                {
-                    throw new NatsJSException($"Invalid {NatsTimeStampHeader} header value: {timeStringFromHeaders}");
-                }
-
-                time = timeFromHeaders;
-            }
+            throw new NatsJSException("Direct get response has no headers");
         }
 
-        return new NatsStreamMsg<T>(msg.Data, sequence, subject, time, msg.Headers);
+        var sequenceString = headers[NatsSequenceHeader];
+        if (StringValues.IsNullOrEmpty(sequenceString))
+        {
+            throw new NatsJSException($"Missing {NatsSequenceHeader} header");
+        }
+
+        if (!ulong.TryParse(sequenceString, NumberStyles.None, CultureInfo.InvariantCulture, out ulong sequence))
+        {
+            throw new NatsJSException($"Invalid {NatsSequenceHeader} header value: {sequenceString}");
+        }
+
+        var timeString = headers[NatsTimeStampHeader];
+        if (StringValues.IsNullOrEmpty(timeString))
+        {
+            throw new NatsJSException($"Missing {NatsTimeStampHeader} header");
+        }
+
+        if (!DateTimeOffset.TryParse(timeString, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var time))
+        {
+            throw new NatsJSException($"Invalid {NatsTimeStampHeader} header value: {timeString}");
+        }
+
+        if (!headers.TryGetLastValue(NatsSubjectHeader, out string? subject) || string.IsNullOrEmpty(subject))
+        {
+            throw new NatsJSException($"Missing {NatsSubjectHeader} header");
+        }
+
+        return new NatsStreamMsg<T>(msg.Data, sequence, subject, time, headers);
     }
 
     /// <summary>
@@ -127,7 +128,16 @@ public readonly record struct NatsStreamMsg<T>(
             return null;
         }
 
-        var bytes = Convert.FromBase64String(hdrs);
+        byte[] bytes;
+        try
+        {
+            bytes = Convert.FromBase64String(hdrs);
+        }
+        catch (FormatException e)
+        {
+            throw new NatsJSException("Failed to decode message headers", e);
+        }
+
         var parser = new NatsHeaderParser(Encoding.UTF8);
         var headers = new NatsHeaders();
         if (parser.ParseHeaders(new SequenceReader<byte>(new ReadOnlySequence<byte>(bytes)), headers))

@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System.Buffers;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using NATS.Client.Core;
@@ -39,7 +40,7 @@ public class NatsStreamMsgTests
     }
 
     [Fact]
-    public void FromDirect_WithoutHeaders_ReturnsStreamMsgWithInboxSubject()
+    public void FromDirect_WithoutHeaders_ThrowsNatsJSException()
     {
         byte[]? payload = "hello"u8.ToArray();
         var msg = new NatsMsg<string>(
@@ -51,23 +52,31 @@ public class NatsStreamMsgTests
             connection: null,
             flags: NatsMsgFlags.None);
 
-        var result = NatsStreamMsg<string>.FromDirect(msg);
+        Assert.Throws<NatsJSException>(() => NatsStreamMsg<string>.FromDirect(msg));
+    }
 
-        Assert.Equal("hello", result.Data);
-        Assert.Equal(0UL, result.Sequence);
-        Assert.Equal("_INBOX.abc.123", result.Subject);
-        Assert.Equal(default(DateTimeOffset), result.Time);
-        Assert.Null(result.Headers);
+    [Theory]
+    [InlineData("Nats-Subject")]
+    [InlineData("Nats-Sequence")]
+    [InlineData("Nats-Time-Stamp")]
+    public void FromDirect_MissingRequiredHeader_ThrowsNatsJSException(string header)
+    {
+        var headers = new NatsHeaders { ["Nats-Subject"] = "orders.created", ["Nats-Sequence"] = "42", ["Nats-Time-Stamp"] = "2026-08-15T10:30:00Z" };
+        headers.Remove(header);
+
+        var ex = Assert.Throws<NatsJSException>(() => NatsStreamMsg<string>.FromDirect(BuildMsg(headers, "hello")));
+        Assert.Contains(header, ex.Message);
     }
 
     [Fact]
     public void FromDirect_WithNullData_ReturnsNullData()
     {
+        var headers = new NatsHeaders { ["Nats-Subject"] = "orders.created", ["Nats-Sequence"] = "42", ["Nats-Time-Stamp"] = "2026-08-15T10:30:00Z" };
         var msg = new NatsMsg<string>(
             subject: "_INBOX.abc.123",
             replyTo: null,
             size: 0,
-            headers: null,
+            headers: headers,
             data: null,
             connection: null,
             flags: NatsMsgFlags.None);
@@ -75,8 +84,8 @@ public class NatsStreamMsgTests
         var result = NatsStreamMsg<string>.FromDirect(msg);
 
         Assert.Null(result.Data);
-        Assert.Equal(0UL, result.Sequence);
-        Assert.Equal("_INBOX.abc.123", result.Subject);
+        Assert.Equal(42UL, result.Sequence);
+        Assert.Equal("orders.created", result.Subject);
     }
 
     [Fact]
@@ -116,6 +125,7 @@ public class NatsStreamMsgTests
                 "NATS/1.0\r\n" +
                 "Nats-Subject: foo\r\n" +
                 "Nats-Sequence: not-a-number\r\n" +
+                "Nats-Time-Stamp: 2026-08-15T10:30:00Z\r\n" +
                 "\r\n"),
             "hello");
 
@@ -129,6 +139,7 @@ public class NatsStreamMsgTests
             ParseHeaders(
                 "NATS/1.0\r\n" +
                 "Nats-Subject: foo\r\n" +
+                "Nats-Sequence: 42\r\n" +
                 "Nats-Time-Stamp: not-a-date\r\n" +
                 "\r\n"),
             "hello");
@@ -216,6 +227,55 @@ public class NatsStreamMsgTests
         Assert.Equal("orders.created", result.Subject);
     }
 
+    [Fact]
+    public void FromDirect_NanosecondTimeStamp_IsParsed()
+    {
+        var headers = new NatsHeaders
+        {
+            ["Nats-Subject"] = "orders.created",
+            ["Nats-Sequence"] = "42",
+            ["Nats-Time-Stamp"] = "2026-08-15T10:30:00.123456789Z",
+        };
+
+        var result = NatsStreamMsg<string>.FromDirect(BuildMsg(headers, "hello"));
+
+        Assert.Equal(
+            new DateTimeOffset(2026, 8, 15, 10, 30, 0, TimeSpan.Zero).AddTicks(1234568),
+            result.Time.ToUniversalTime());
+    }
+
+    [Fact]
+    public void FromDirect_TimeStamp_IsCultureInvariant()
+    {
+        var headers = new NatsHeaders
+        {
+            ["Nats-Subject"] = "orders.created",
+            ["Nats-Sequence"] = "42",
+            ["Nats-Time-Stamp"] = "2026-08-15T10:30:00Z",
+        };
+
+        var original = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo("ar-SA");
+            var result = NatsStreamMsg<string>.FromDirect(BuildMsg(headers, "hello"));
+            Assert.Equal(new DateTimeOffset(2026, 8, 15, 10, 30, 0, TimeSpan.Zero), result.Time.ToUniversalTime());
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
+    }
+
+    [Fact]
+    public void FromStreamResponse_MalformedBase64Headers_ThrowsNatsJSException()
+    {
+        var response = StreamResponse("!!!not base64!!!");
+
+        Assert.Throws<NatsJSException>(() =>
+            NatsStreamMsg<string>.FromStreamResponse(response, DirectGetJsonSerializer<string>.Default));
+    }
+
     private static NatsHeaders ParseHeaders(string frame)
     {
         var bytes = Encoding.UTF8.GetBytes(frame);
@@ -240,4 +300,16 @@ public class NatsStreamMsgTests
             connection: null,
             flags: NatsMsgFlags.None);
     }
+
+    private static StreamMsgGetResponse StreamResponse(string? hdrs) => new()
+    {
+        Message = new StoredMessage
+        {
+            Subject = "orders.created",
+            Seq = 42,
+            Data = default,
+            Time = new DateTimeOffset(2026, 8, 15, 10, 30, 0, TimeSpan.Zero),
+            Hdrs = hdrs,
+        },
+    };
 }
