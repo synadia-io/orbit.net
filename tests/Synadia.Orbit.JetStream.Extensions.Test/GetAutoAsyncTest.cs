@@ -290,4 +290,29 @@ public class GetAutoAsyncTest(NatsServerFixture server)
         Assert.NotEqual(default, fromStream.Time);
         Assert.Equal(fromStream.Time.Offset, fromDirect.Time.Offset);
     }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task GetAutoAsync_MissingMessage_ThrowsNoMessageFoundOnBothPaths(bool allowDirect)
+    {
+        await using var nats = new NatsConnection(new NatsOpts { Url = server.Url });
+        await nats.ConnectRetryAsync();
+        Assert.SkipUnless(nats.HasMinServerVersion(2, 10), $"Server version {nats.ServerInfo?.Version} does not support direct get (requires 2.10+)");
+
+        var prefix = server.GetNextId();
+        var js = new NatsJSContext(nats);
+
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        var stream = await js.CreateStreamAsync(
+            new StreamConfig($"{prefix}S1", [$"{prefix}s1"]) { AllowDirect = allowDirect },
+            cancellationToken: cts.Token);
+
+        await Assert.ThrowsAsync<NatsJSNoMessageFoundException>(async () =>
+            await js.GetAutoAsync<string>(
+                stream,
+                new StreamMsgGetRequest { Seq = 999 },
+                cancellationToken: cts.Token));
+    }
 }

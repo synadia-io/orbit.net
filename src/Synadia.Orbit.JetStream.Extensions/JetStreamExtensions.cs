@@ -15,6 +15,8 @@ namespace Synadia.Orbit.JetStream.Extensions;
 /// </summary>
 public static class JetStreamExtensions
 {
+    private const int JSErrCodeMessageNotFound = 10037;
+
     /// <summary>
     /// Request a direct batch message.
     /// </summary>
@@ -98,10 +100,21 @@ public static class JetStreamExtensions
             }
         }
 
-        var response = await context.JSRequestResponseAsync<StreamMsgGetRequest, StreamMsgGetResponse>(
-            subject: $"{context.Opts.Prefix}.STREAM.MSG.GET.{streamName}",
-            request: request,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+        StreamMsgGetResponse response;
+        try
+        {
+            response = await context.JSRequestResponseAsync<StreamMsgGetRequest, StreamMsgGetResponse>(
+                subject: $"{context.Opts.Prefix}.STREAM.MSG.GET.{streamName}",
+                request: request,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        catch (NatsJSApiException e) when (e.Error.ErrCode == JSErrCodeMessageNotFound)
+        {
+            // The direct get path reports a missing message as NatsJSNoMessageFoundException,
+            // so report it the same way here rather than letting the exception type depend on
+            // whether the stream happens to allow direct get.
+            throw new NatsJSNoMessageFoundException();
+        }
 
         return NatsStreamMsg<T>.FromStreamResponse(response, serializer);
     }
