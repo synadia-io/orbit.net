@@ -52,6 +52,7 @@ public class JetStreamFastPublishTest
 
         Assert.NotNull(commitAck);
         Assert.Equal(3, commitAck.BatchSize);
+        Assert.Equal(commitAck.BatchSize, batch.Size);
         Assert.NotEmpty(commitAck.BatchId);
         Assert.Equal(streamName, commitAck.Stream);
         Assert.True(batch.IsClosed);
@@ -132,6 +133,7 @@ public class JetStreamFastPublishTest
         var commitAck = await batch.CloseAsync(ct);
 
         Assert.Equal(2, commitAck.BatchSize);
+        Assert.Equal(commitAck.BatchSize, batch.Size);
         Assert.True(batch.IsClosed);
 
         await Assert.ThrowsAsync<NatsJSBatchClosedException>(

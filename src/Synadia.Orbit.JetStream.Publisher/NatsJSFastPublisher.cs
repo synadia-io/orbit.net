@@ -384,8 +384,20 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
                 }
 
                 headers = BatchPublishHelper.CloneAndApplyMsgOpts(msg.Headers, opts);
-                _sequence++;
-                seq = _sequence;
+
+                // EOB: don't bump _sequence. The sentinel still ships with seq n+1 on the wire,
+                // but Size keeps reporting the count of stored messages, matching ack.BatchSize
+                // and NatsJSBatchPublisher.
+                if (eob)
+                {
+                    seq = _sequence + 1;
+                }
+                else
+                {
+                    _sequence++;
+                    seq = _sequence;
+                }
+
                 operation = eob ? OpCommitEob : OpCommitMsg;
                 reply = BuildReplySubject(seq, operation);
 
