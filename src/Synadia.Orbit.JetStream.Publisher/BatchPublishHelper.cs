@@ -13,6 +13,9 @@ namespace Synadia.Orbit.JetStream.Publisher;
 
 internal static class BatchPublishHelper
 {
+    private const string ExpectedLastSequence = "Nats-Expected-Last-Sequence";
+    private const string ExpectedLastMsgId = "Nats-Expected-Last-Msg-Id";
+
     [DoesNotReturn]
     internal static void ThrowBatchPublishException(BatchPublishErrorResponse error)
     {
@@ -83,7 +86,7 @@ internal static class BatchPublishHelper
 
         if (opts.LastSeq.HasValue)
         {
-            headers["Nats-Expected-Last-Sequence"] = opts.LastSeq.Value.ToString();
+            headers[ExpectedLastSequence] = opts.LastSeq.Value.ToString();
         }
 
         if (opts.LastSubjectSeq.HasValue)
@@ -94,6 +97,32 @@ internal static class BatchPublishHelper
         if (!string.IsNullOrEmpty(opts.LastSubject))
         {
             headers["Nats-Expected-Last-Subject-Sequence-Subject"] = opts.LastSubject;
+        }
+    }
+
+    // Atomic batches only. Fast-ingest batches carry no batch headers and ADR-50 allows
+    // per-message expectation checks throughout, so none of this applies there.
+    internal static void ValidateBatchHeaders(NatsHeaders headers, bool isFirstMessage)
+    {
+        // ADR-50: only the first message of a batch may carry this. The server kills the whole
+        // batch for a later one (10071 when the value doesn't match what the batch has reached,
+        // 10164 when it does), by which point there's nothing to say which message caused it.
+        if (!isFirstMessage && headers.ContainsKey(ExpectedLastSequence))
+        {
+            throw new ArgumentException($"{ExpectedLastSequence} is only allowed on the first message of a batch");
+        }
+
+        // Refused by the server inside a batch with 10177.
+        if (headers.ContainsKey(ExpectedLastMsgId))
+        {
+            throw new ArgumentException($"{ExpectedLastMsgId} is not supported inside a batch");
+        }
+
+        // Written by the publisher when the batch is committed. A user header of the same name
+        // survives the clone on an add and would commit the batch early.
+        if (headers.ContainsKey(NatsJSBatchHeaders.BatchCommit))
+        {
+            throw new ArgumentException($"{NatsJSBatchHeaders.BatchCommit} is set by the publisher and must not be supplied");
         }
     }
 
