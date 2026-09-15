@@ -559,6 +559,15 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
         var data = ack.Data;
         if (data == null || data.Length == 0)
         {
+            // A status message carries no batch state, but it is terminal for this batch: 503
+            // means the stream does not capture the subject being published to, so no ack will
+            // ever arrive. Report it instead of leaving the caller to wait out the ack timeout.
+            var code = ack.Headers?.Code ?? 0;
+            if (code != 0)
+            {
+                HandleStatus(code, ack.Headers?.MessageText);
+            }
+
             return;
         }
 
@@ -717,6 +726,31 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
         commitTcs?.TrySetResult(commitAck);
     }
 
+    private void HandleStatus(int code, string? messageText)
+    {
+        var error = code == 503
+            ? (Exception)new NatsNoRespondersException()
+            : new NatsJSException($"Unexpected status {code} on the fast batch control channel: {messageText}");
+
+        // Report before faulting the waiter: the handler runs inline on the reader thread, so
+        // this way a caller resuming from AddAsync can rely on the handler having already run.
+        InvokeErrorHandler(error);
+
+        // A 503 on the first message means the batch never started. On a later message it means
+        // that one message was lost, which the server will report as a gap on the next one; in
+        // "ok" gap mode the caller has said that is tolerable, so leave the batch open.
+        bool batchStarted;
+        lock (_lock)
+        {
+            batchStarted = _firstAckTcs == null && _sequence > 0;
+        }
+
+        if (!batchStarted || !_opts.ContinueOnGap)
+        {
+            CloseOnError(error);
+        }
+    }
+
     private async Task WaitForStallAsync(TaskCompletionSource<bool> stallTcs, CancellationToken cancellationToken)
     {
         var pingInterval = TimeSpan.FromMilliseconds(Math.Max(1, _ackTimeout.TotalMilliseconds / 3));
@@ -786,7 +820,7 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
         }
     }
 
-    private void CloseOnError()
+    private void CloseOnError(Exception? fault = null)
     {
         TaskCompletionSource<FastPublishFlowAckResponse>? firstTcs;
         TaskCompletionSource<BatchPublishAckResponse>? commitTcs;
@@ -801,6 +835,14 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
             _firstAckTcs = null;
             _commitTcs = null;
             _stallTcs = null;
+        }
+
+        if (fault != null)
+        {
+            firstTcs?.TrySetException(fault);
+            commitTcs?.TrySetException(fault);
+            stallTcs?.TrySetException(fault);
+            return;
         }
 
         firstTcs?.TrySetCanceled();

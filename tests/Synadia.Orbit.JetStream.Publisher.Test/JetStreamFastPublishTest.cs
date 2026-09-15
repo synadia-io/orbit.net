@@ -231,4 +231,44 @@ public class JetStreamFastPublishTest
         await Assert.ThrowsAnyAsync<Exception>(
             async () => await batch.AddAsync($"{subject}.1", "msg"u8.ToArray(), cancellationToken: ct));
     }
+
+    [Fact]
+    public async Task Fast_batch_no_responders_reported_not_swallowed()
+    {
+        await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 14), $"Server version {connection.ServerInfo?.Version} does not support fast batch publish (requires 2.14+)");
+
+        var js = connection.CreateJetStreamContext();
+        var prefix = _server.GetNextId();
+        var subject = $"{prefix}test";
+
+        var ct = TestContext.Current.CancellationToken;
+
+        // No stream captures the subject, so the first message's reply reaches no interest and
+        // the server answers 503. It arrives on the control channel as an ordinary status
+        // message, not through RequestAsync, so nothing raises it for us.
+        var errors = new List<Exception>();
+        await using var batch = js.CreateOrbitFastPublisher(new NatsJSFastPublisherOpts
+        {
+            ErrorHandler = ex =>
+            {
+                lock (errors)
+                {
+                    errors.Add(ex);
+                }
+            },
+            FlowControl = new NatsJSFastPublishFlowControl { AckTimeout = TimeSpan.FromSeconds(10) },
+        });
+
+        await Assert.ThrowsAsync<NatsNoRespondersException>(
+            async () => await batch.AddAsync($"{subject}.1", "msg"u8.ToArray(), cancellationToken: ct));
+
+        lock (errors)
+        {
+            Assert.Contains(errors, e => e is NatsNoRespondersException);
+        }
+
+        Assert.True(batch.IsClosed);
+    }
 }
