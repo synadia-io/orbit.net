@@ -723,7 +723,26 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
             _closed = true;
         }
 
-        commitTcs?.TrySetResult(commitAck);
+        if (commitTcs != null)
+        {
+            commitTcs.TrySetResult(commitAck);
+            return;
+        }
+
+        // The server ended the batch on its own, after a gap or a per-message error in "fail"
+        // mode. Those reports are explicitly informational, so this ack is the only authoritative
+        // statement of what was stored.
+        InvokeErrorHandler(commitAck.Error != null
+            ? BatchPublishHelper.FastPublishExceptionFor(commitAck.Error)
+            : new NatsJSFastPublishBatchEndedException(new NatsJSBatchAck
+            {
+                Stream = commitAck.Stream ?? string.Empty,
+                Sequence = commitAck.Seq,
+                Domain = commitAck.Domain,
+                Value = commitAck.Value,
+                BatchId = commitAck.BatchId ?? string.Empty,
+                BatchSize = commitAck.BatchSize,
+            }));
     }
 
     private void HandleStatus(int code, string? messageText)

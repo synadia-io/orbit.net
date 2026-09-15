@@ -271,4 +271,59 @@ public class JetStreamFastPublishTest
 
         Assert.True(batch.IsClosed);
     }
+
+    [Fact]
+    public async Task Fast_batch_terminal_ack_reported_when_server_ends_batch()
+    {
+        await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 14), $"Server version {connection.ServerInfo?.Version} does not support fast batch publish (requires 2.14+)");
+
+        var js = connection.CreateJetStreamContext();
+        var prefix = _server.GetNextId();
+        var streamName = $"{prefix}TEST";
+        var subject = $"{prefix}test";
+
+        var ct = TestContext.Current.CancellationToken;
+
+        await js.CreateStreamAsync(
+            new StreamConfig(streamName, [$"{subject}.>"]) { AllowBatchPublish = true },
+            ct);
+
+        var errors = new List<Exception>();
+        var terminal = new TaskCompletionSource<Exception>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // Default gap mode is "fail", so a failed per-message expectation ends the batch: the
+        // server sends a BatchFlowErr and then a terminal ack. Nobody is awaiting a commit, so
+        // before the fix the terminal ack was dropped on the floor.
+        await using var batch = js.CreateOrbitFastPublisher(new NatsJSFastPublisherOpts
+        {
+            ErrorHandler = ex =>
+            {
+                lock (errors)
+                {
+                    errors.Add(ex);
+                }
+
+                if (ex is not NatsJSFastPublishMessageException)
+                {
+                    terminal.TrySetResult(ex);
+                }
+            },
+        });
+
+        await batch.AddAsync($"{subject}.1", "message 1"u8.ToArray(), cancellationToken: ct);
+
+        // Expect a last sequence the stream cannot be at.
+        await batch.AddAsync(
+            $"{subject}.2",
+            "message 2"u8.ToArray(),
+            new NatsJSBatchMsgOpts { LastSeq = 999999 },
+            cancellationToken: ct);
+
+        var completed = await Task.WhenAny(terminal.Task, Task.Delay(TimeSpan.FromSeconds(10), ct));
+        Assert.True(completed == terminal.Task, $"No terminal report; saw: {string.Join(", ", errors.Select(e => e.GetType().Name))}");
+
+        _output.WriteLine($"terminal: {await terminal.Task}");
+    }
 }
