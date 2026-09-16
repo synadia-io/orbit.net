@@ -172,6 +172,9 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
                     throw new NatsJSBatchClosedException();
                 }
 
+                // Validate before taking the sequence so a rejected message doesn't leave a hole.
+                BatchPublishHelper.ValidateBatchHeaders(headers, isFirstMessage: _sequence == 0);
+
                 _sequence++;
                 currentSeq = _sequence;
 
@@ -270,6 +273,8 @@ public sealed class NatsJSBatchPublisher : INatsJSBatchPublisher
                 {
                     throw new NatsJSBatchClosedException();
                 }
+
+                BatchPublishHelper.ValidateBatchHeaders(headers, isFirstMessage: _sequence == 0);
 
                 // Close up-front so concurrent commits can't both send.
                 _closed = true;
