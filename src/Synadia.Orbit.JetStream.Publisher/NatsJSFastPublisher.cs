@@ -41,6 +41,7 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
     private ushort _flow;
     private long _sequence;
     private long _ackSequence;
+    private long _publishedSequence;
     private bool _closed;
     private string? _batchSubject;
 
@@ -303,6 +304,11 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
                 throw;
             }
 
+            lock (_lock)
+            {
+                _publishedSequence = seq;
+            }
+
             if (isFirst && firstTcs != null)
             {
                 FastPublishFlowAckResponse firstAck;
@@ -384,8 +390,20 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
                 }
 
                 headers = BatchPublishHelper.CloneAndApplyMsgOpts(msg.Headers, opts);
-                _sequence++;
-                seq = _sequence;
+
+                // EOB: don't bump _sequence. The sentinel still ships with seq n+1 on the wire,
+                // but Size keeps reporting the count of stored messages, matching ack.BatchSize
+                // and NatsJSBatchPublisher.
+                if (eob)
+                {
+                    seq = _sequence + 1;
+                }
+                else
+                {
+                    _sequence++;
+                    seq = _sequence;
+                }
+
                 operation = eob ? OpCommitEob : OpCommitMsg;
                 reply = BuildReplySubject(seq, operation);
 
@@ -423,6 +441,11 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
             {
                 CloseOnError();
                 throw;
+            }
+
+            lock (_lock)
+            {
+                _publishedSequence = seq;
             }
 
             using var cts = BatchPublishHelper.CreateCommitCancellationTokenSource(cancellationToken, _ackTimeout);
@@ -547,6 +570,15 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
         var data = ack.Data;
         if (data == null || data.Length == 0)
         {
+            // A status message carries no batch state, but it is terminal for this batch: 503
+            // means the stream does not capture the subject being published to, so no ack will
+            // ever arrive. Report it instead of leaving the caller to wait out the ack timeout.
+            var code = ack.Headers?.Code ?? 0;
+            if (code != 0)
+            {
+                HandleStatus(code, ack.Headers?.MessageText, ack.Subject);
+            }
+
             return;
         }
 
@@ -702,7 +734,80 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
             _closed = true;
         }
 
-        commitTcs?.TrySetResult(commitAck);
+        if (commitTcs != null)
+        {
+            commitTcs.TrySetResult(commitAck);
+            return;
+        }
+
+        // The server ended the batch on its own, after a gap or a per-message error in "fail"
+        // mode. Those reports are explicitly informational, so this ack is the only authoritative
+        // statement of what was stored.
+        InvokeErrorHandler(commitAck.Error != null
+            ? BatchPublishHelper.FastPublishExceptionFor(commitAck.Error)
+            : new NatsJSFastPublishBatchEndedException(new NatsJSBatchAck
+            {
+                Stream = commitAck.Stream ?? string.Empty,
+                Sequence = commitAck.Seq,
+                Domain = commitAck.Domain,
+                Value = commitAck.Value,
+                BatchId = commitAck.BatchId ?? string.Empty,
+                BatchSize = commitAck.BatchSize,
+            }));
+    }
+
+    private void HandleStatus(int code, string? messageText, string subject)
+    {
+        var error = code == 503
+            ? (Exception)new NatsNoRespondersException()
+            : new NatsJSException($"Unexpected status {code} on the fast batch control channel: {messageText}");
+
+        // Report before faulting the waiter: the handler runs inline on the reader thread, so
+        // this way a caller resuming from AddAsync can rely on the handler having already run.
+        InvokeErrorHandler(error);
+
+        // A 503 on the first message means the batch never started. On a later add it means that
+        // one message reached no stream at all, and the next add that does reach one is answered
+        // with a gap report, which in "ok" mode the server tolerates and so do we.
+        //
+        // A commit has no next message to carry that report, so tolerating it would leave the
+        // caller waiting out the whole ack timeout for an ack that cannot arrive.
+        bool batchStarted;
+        lock (_lock)
+        {
+            batchStarted = _firstAckTcs == null && _sequence > 0;
+        }
+
+        if (!batchStarted || !_opts.ContinueOnGap || IsCommitReply(subject))
+        {
+            CloseOnError(error);
+        }
+    }
+
+    // The operation is the second to last token of the reply subject this status answers, as
+    // BuildReplySubject wrote it.
+    private bool IsCommitReply(string subject)
+    {
+        var last = subject.LastIndexOf('.');
+        if (last <= 0)
+        {
+            return false;
+        }
+
+        var start = subject.LastIndexOf('.', last - 1);
+        if (start < 0)
+        {
+            return false;
+        }
+
+#if NETSTANDARD2_0
+        var token = subject.Substring(start + 1, last - start - 1);
+#else
+        var token = subject.AsSpan(start + 1, last - start - 1);
+#endif
+
+        return int.TryParse(token, NumberStyles.None, CultureInfo.InvariantCulture, out var operation)
+               && (operation == OpCommitMsg || operation == OpCommitEob);
     }
 
     private async Task WaitForStallAsync(TaskCompletionSource<bool> stallTcs, CancellationToken cancellationToken)
@@ -753,11 +858,15 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
         string? subject;
         lock (_lock)
         {
-            seq = _sequence;
+            // The last sequence actually on the wire, not _sequence: a stall happens after the
+            // next sequence is taken but before its message is published. The server answers a
+            // ping ahead of what it has received with a gap report, which in the default "fail"
+            // gap mode ends the batch.
+            seq = _publishedSequence;
             subject = _batchSubject;
         }
 
-        if (subject == null)
+        if (subject == null || seq == 0)
         {
             return;
         }
@@ -774,7 +883,7 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
         }
     }
 
-    private void CloseOnError()
+    private void CloseOnError(Exception? fault = null)
     {
         TaskCompletionSource<FastPublishFlowAckResponse>? firstTcs;
         TaskCompletionSource<BatchPublishAckResponse>? commitTcs;
@@ -789,6 +898,14 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
             _firstAckTcs = null;
             _commitTcs = null;
             _stallTcs = null;
+        }
+
+        if (fault != null)
+        {
+            firstTcs?.TrySetException(fault);
+            commitTcs?.TrySetException(fault);
+            stallTcs?.TrySetException(fault);
+            return;
         }
 
         firstTcs?.TrySetCanceled();
