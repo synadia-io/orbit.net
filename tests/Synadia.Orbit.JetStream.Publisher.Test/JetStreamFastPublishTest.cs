@@ -326,4 +326,40 @@ public class JetStreamFastPublishTest
 
         _output.WriteLine($"terminal: {await terminal.Task}");
     }
+
+    [Fact]
+    public async Task Fast_batch_no_responders_on_commit_fails_fast_in_gap_ok_mode()
+    {
+        await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 14), $"Server version {connection.ServerInfo?.Version} does not support fast batch publish (requires 2.14+)");
+
+        var js = connection.CreateJetStreamContext();
+        var prefix = _server.GetNextId();
+        var streamName = $"{prefix}TEST";
+        var subject = $"{prefix}test";
+
+        var ct = TestContext.Current.CancellationToken;
+
+        await js.CreateStreamAsync(
+            new StreamConfig(streamName, [$"{subject}.>"]) { AllowBatchPublish = true },
+            ct);
+
+        // "ok" gap mode tolerates a 503 on an add, because the next add that does reach the
+        // stream is answered with a gap report. A commit has no next message, so tolerating it
+        // would only get the caller a timeout once the ack never arrives.
+        await using var batch = js.CreateOrbitFastPublisher(new NatsJSFastPublisherOpts
+        {
+            ContinueOnGap = true,
+            FlowControl = new NatsJSFastPublishFlowControl { AckTimeout = TimeSpan.FromSeconds(10) },
+        });
+
+        await batch.AddAsync($"{subject}.1", "message 1"u8.ToArray(), cancellationToken: ct);
+
+        // Committing to a subject the stream does not capture.
+        await Assert.ThrowsAsync<NatsNoRespondersException>(
+            async () => await batch.CommitAsync($"{prefix}uncaptured", "final"u8.ToArray(), cancellationToken: ct));
+
+        Assert.True(batch.IsClosed);
+    }
 }

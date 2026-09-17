@@ -565,7 +565,7 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
             var code = ack.Headers?.Code ?? 0;
             if (code != 0)
             {
-                HandleStatus(code, ack.Headers?.MessageText);
+                HandleStatus(code, ack.Headers?.MessageText, ack.Subject);
             }
 
             return;
@@ -745,7 +745,7 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
             }));
     }
 
-    private void HandleStatus(int code, string? messageText)
+    private void HandleStatus(int code, string? messageText, string subject)
     {
         var error = code == 503
             ? (Exception)new NatsNoRespondersException()
@@ -755,19 +755,48 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
         // this way a caller resuming from AddAsync can rely on the handler having already run.
         InvokeErrorHandler(error);
 
-        // A 503 on the first message means the batch never started. On a later message it means
-        // that one message was lost, which the server will report as a gap on the next one; in
-        // "ok" gap mode the caller has said that is tolerable, so leave the batch open.
+        // A 503 on the first message means the batch never started. On a later add it means that
+        // one message reached no stream at all, and the next add that does reach one is answered
+        // with a gap report, which in "ok" mode the server tolerates and so do we.
+        //
+        // A commit has no next message to carry that report, so tolerating it would leave the
+        // caller waiting out the whole ack timeout for an ack that cannot arrive.
         bool batchStarted;
         lock (_lock)
         {
             batchStarted = _firstAckTcs == null && _sequence > 0;
         }
 
-        if (!batchStarted || !_opts.ContinueOnGap)
+        if (!batchStarted || !_opts.ContinueOnGap || IsCommitReply(subject))
         {
             CloseOnError(error);
         }
+    }
+
+    // The operation is the second to last token of the reply subject this status answers, as
+    // BuildReplySubject wrote it.
+    private bool IsCommitReply(string subject)
+    {
+        var last = subject.LastIndexOf('.');
+        if (last <= 0)
+        {
+            return false;
+        }
+
+        var start = subject.LastIndexOf('.', last - 1);
+        if (start < 0)
+        {
+            return false;
+        }
+
+#if NETSTANDARD2_0
+        var token = subject.Substring(start + 1, last - start - 1);
+#else
+        var token = subject.AsSpan(start + 1, last - start - 1);
+#endif
+
+        return int.TryParse(token, NumberStyles.None, CultureInfo.InvariantCulture, out var operation)
+               && (operation == OpCommitMsg || operation == OpCommitEob);
     }
 
     private async Task WaitForStallAsync(TaskCompletionSource<bool> stallTcs, CancellationToken cancellationToken)
