@@ -41,6 +41,7 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
     private ushort _flow;
     private long _sequence;
     private long _ackSequence;
+    private long _publishedSequence;
     private bool _closed;
     private string? _batchSubject;
 
@@ -303,6 +304,11 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
                 throw;
             }
 
+            lock (_lock)
+            {
+                _publishedSequence = seq;
+            }
+
             if (isFirst && firstTcs != null)
             {
                 FastPublishFlowAckResponse firstAck;
@@ -435,6 +441,11 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
             {
                 CloseOnError();
                 throw;
+            }
+
+            lock (_lock)
+            {
+                _publishedSequence = seq;
             }
 
             using var cts = BatchPublishHelper.CreateCommitCancellationTokenSource(cancellationToken, _ackTimeout);
@@ -847,11 +858,15 @@ public sealed class NatsJSFastPublisher : INatsJSFastPublisher
         string? subject;
         lock (_lock)
         {
-            seq = _sequence;
+            // The last sequence actually on the wire, not _sequence: a stall happens after the
+            // next sequence is taken but before its message is published. The server answers a
+            // ping ahead of what it has received with a gap report, which in the default "fail"
+            // gap mode ends the batch.
+            seq = _publishedSequence;
             subject = _batchSubject;
         }
 
-        if (subject == null)
+        if (subject == null || seq == 0)
         {
             return;
         }

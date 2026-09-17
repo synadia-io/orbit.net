@@ -1,6 +1,7 @@
 // Copyright (c) Synadia Communications, Inc. All rights reserved.
 // Licensed under the Apache License, Version 2.0.
 
+using System.Text;
 using NATS.Client.Core;
 using NATS.Client.JetStream.Models;
 using NATS.Net;
@@ -361,5 +362,57 @@ public class JetStreamFastPublishTest
             async () => await batch.CommitAsync($"{prefix}uncaptured", "final"u8.ToArray(), cancellationToken: ct));
 
         Assert.True(batch.IsClosed);
+    }
+
+    [Fact]
+    public async Task Fast_batch_ping_sequence_is_the_last_published_one()
+    {
+        await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 14), $"Server version {connection.ServerInfo?.Version} does not support fast batch publish (requires 2.14+)");
+
+        var js = connection.CreateJetStreamContext();
+        var prefix = _server.GetNextId();
+        var streamName = $"{prefix}TEST";
+        var subject = $"{prefix}test";
+
+        var ct = TestContext.Current.CancellationToken;
+
+        await js.CreateStreamAsync(
+            new StreamConfig(streamName, [subject]) { AllowBatchPublish = true },
+            ct);
+
+        // Drive the wire protocol by hand to pin down what a ping's sequence means to the
+        // server: a ping ahead of what the server has received is a gap, and in the default
+        // "fail" gap mode that ends the batch. The publisher stalls after taking the next
+        // sequence but before publishing it, so pinging with _sequence would always be ahead.
+        var inbox = $"_FB.{prefix}ping";
+        await using var sub = await connection.SubscribeCoreAsync<byte[]>($"{inbox}.>", cancellationToken: ct);
+
+        string Reply(int seq, int op) => $"{inbox}.2.fail.{seq}.{op}.$FI";
+
+        async Task<string> NextAsync()
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(5));
+            var msg = await sub.Msgs.ReadAsync(cts.Token);
+            return Encoding.UTF8.GetString(msg.Data ?? []);
+        }
+
+        await connection.PublishAsync(subject, "one"u8.ToArray(), replyTo: Reply(1, 0), cancellationToken: ct);
+        Assert.Contains("\"type\":\"ack\"", await NextAsync());
+
+        await connection.PublishAsync(subject, "two"u8.ToArray(), replyTo: Reply(2, 1), cancellationToken: ct);
+        Assert.Contains("\"type\":\"ack\"", await NextAsync());
+
+        // A ping carrying the last published sequence is answered with a flow ack only.
+        await connection.PublishAsync(subject, ReadOnlyMemory<byte>.Empty, replyTo: Reply(2, 4), cancellationToken: ct);
+        var onTime = await NextAsync();
+        Assert.DoesNotContain("\"type\":\"gap\"", onTime);
+        Assert.Contains("\"type\":\"ack\"", onTime);
+
+        // One ahead, which is what the publisher used to send, is a gap.
+        await connection.PublishAsync(subject, ReadOnlyMemory<byte>.Empty, replyTo: Reply(3, 4), cancellationToken: ct);
+        Assert.Contains("\"type\":\"gap\"", await NextAsync());
     }
 }
