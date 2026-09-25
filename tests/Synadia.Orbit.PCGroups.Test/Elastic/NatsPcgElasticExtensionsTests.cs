@@ -3,6 +3,7 @@
 
 // ReSharper disable SuggestVarOrType_BuiltInTypes
 using NATS.Client.Core;
+using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
 using NATS.Net;
 using Synadia.Orbit.PCGroups.Elastic;
@@ -1141,14 +1142,18 @@ public class NatsPcgElasticExtensionsTests
         }
     }
 
-    [Fact]
-    public async Task ConsumeElastic_MemberGainingPartition_ReceivesMessagesBehindConsumerPosition()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ConsumeElastic_MemberGainingPartition_ReceivesMessagesBehindConsumerPosition(bool drain)
     {
         // Regression for the membership-change skip bug: when a member gains a partition,
         // updating the existing consumer's filters is not enough because the consumer may
         // have already advanced its stream position past messages of the new partition.
         // The consumer must be deleted and recreated so it rescans from the start.
-        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
+        // With drain enabled, the interrupted pull completes normally instead of throwing,
+        // which must still lead to a recreate rather than ending the enumerable.
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url, DrainSubscriptionsOnDispose = drain });
         var js = nats.CreateJetStreamContext();
 
         var id = Guid.NewGuid().ToString("N");
@@ -1190,7 +1195,7 @@ public class NatsPcgElasticExtensionsTests
             {
                 try
                 {
-                    await foreach (var msg in js.ConsumePcgElasticAsync<string>(streamName, groupName, "a", cancellationToken: cts.Token))
+                    await foreach (var msg in js.ConsumePcgElasticAsync<string>(streamName, groupName, "a", drainOnCancel: drain, cancellationToken: cts.Token))
                     {
                         received.TryAdd(msg.Data!, 0);
                         await msg.AckAsync(cancellationToken: cts.Token);
@@ -1204,26 +1209,7 @@ public class NatsPcgElasticExtensionsTests
             // Wait for A to drain its partition (partition 0): count climbs then stays
             // flat. Once flat, A's consumer position has advanced past the partition-1
             // messages still sitting in the work queue.
-            int stableCount = -1;
-            int stableFor = 0;
-            while (!cts.Token.IsCancellationRequested)
-            {
-                await Task.Delay(300, cts.Token);
-                int now = received.Count;
-                if (now == stableCount && now > 0)
-                {
-                    stableFor++;
-                    if (stableFor >= 5)
-                    {
-                        break;
-                    }
-                }
-                else
-                {
-                    stableCount = now;
-                    stableFor = 0;
-                }
-            }
+            await WaitForStableCountAsync(received, cts.Token);
 
             int afterDrain = received.Count;
             Assert.True(afterDrain > 0, "member a should have consumed its own partition");
@@ -1248,6 +1234,208 @@ public class NatsPcgElasticExtensionsTests
         finally
         {
             await js.DeleteStreamAsync(streamName);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ConsumeElastic_RejoinAfterGainingPartition_ReceivesMessagesBehindConsumerPosition(bool drain)
+    {
+        // A durable consumer left over from a previous run keeps its stream position.
+        // Starting again with a different partition set must recreate it rather than
+        // update its filters in place, or retained messages behind it are skipped.
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url, DrainSubscriptionsOnDispose = drain });
+        var js = nats.CreateJetStreamContext();
+
+        var id = Guid.NewGuid().ToString("N");
+        var streamName = $"test-stream-{id}";
+
+        await js.CreateStreamAsync(new StreamConfig
+        {
+            Name = streamName,
+            Subjects = [$"rj{id}.*"],
+        });
+
+        try
+        {
+            var groupName = $"test-group-{id}";
+
+            await js.CreatePcgElasticAsync(
+                streamName,
+                groupName,
+                maxNumMembers: 2,
+                partitioningFilters: [new NatsPcgPartitioningFilter($"rj{id}.*", [1])]);
+
+            await js.AddPcgElasticMembersAsync(streamName, groupName, ["a", "b"]);
+
+            const int messageCount = 60;
+            for (int i = 0; i < messageCount; i++)
+            {
+                await js.PublishAsync($"rj{id}.key{i}", $"payload-{i}");
+            }
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(40));
+            var received = new System.Collections.Concurrent.ConcurrentDictionary<string, byte>();
+
+            // First run: a consumes and acks its own partition, then stops. Its consumer
+            // stays on the server, positioned past the retained partition-1 messages.
+            using (var firstRunCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token))
+            {
+                var firstRun = ConsumeIntoAsync(js, streamName, groupName, "a", drain, received, firstRunCts.Token);
+                await WaitForStableCountAsync(received, cts.Token);
+                firstRunCts.Cancel();
+                await firstRun;
+            }
+
+            int afterFirstRun = received.Count;
+            Assert.True(afterFirstRun > 0, "member a should have consumed its own partition");
+            Assert.True(afterFirstRun < messageCount, $"member a should not yet have all messages (got {afterFirstRun}); partition 1 belongs to b");
+
+            await js.DeletePcgElasticMembersAsync(streamName, groupName, ["b"]);
+
+            // Second run under the same member name now owns both partitions.
+            var secondRun = ConsumeIntoAsync(js, streamName, groupName, "a", drain, received, cts.Token);
+
+            while (received.Count < messageCount && !cts.Token.IsCancellationRequested)
+            {
+                await Task.Delay(200, cts.Token);
+            }
+
+            cts.Cancel();
+            await secondRun;
+
+            Assert.Equal(messageCount, received.Count);
+
+            await js.DeletePcgElasticAsync(streamName, groupName);
+        }
+        finally
+        {
+            await js.DeleteStreamAsync(streamName);
+        }
+    }
+
+    [Fact]
+    public async Task ConsumeElastic_RestartWithUnchangedConfig_ReusesConsumer()
+    {
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
+        var js = nats.CreateJetStreamContext();
+
+        var id = Guid.NewGuid().ToString("N");
+        var streamName = $"test-stream-{id}";
+
+        await js.CreateStreamAsync(new StreamConfig
+        {
+            Name = streamName,
+            Subjects = [$"ru{id}.*"],
+        });
+
+        try
+        {
+            var groupName = $"test-group-{id}";
+
+            await js.CreatePcgElasticAsync(
+                streamName,
+                groupName,
+                maxNumMembers: 2,
+                partitioningFilters: [new NatsPcgPartitioningFilter($"ru{id}.*", [1])]);
+
+            await js.AddPcgElasticMembersAsync(streamName, groupName, ["a"]);
+
+            const int messageCount = 20;
+            for (int i = 0; i < messageCount; i++)
+            {
+                await js.PublishAsync($"ru{id}.key{i}", $"payload-{i}");
+            }
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var received = new System.Collections.Concurrent.ConcurrentDictionary<string, byte>();
+            string workQueueStreamName = $"{streamName}-{groupName}";
+
+            using (var firstRunCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token))
+            {
+                var firstRun = ConsumeIntoAsync(js, streamName, groupName, "a", false, received, firstRunCts.Token);
+                while (received.Count < messageCount && !cts.Token.IsCancellationRequested)
+                {
+                    await Task.Delay(100, cts.Token);
+                }
+
+                firstRunCts.Cancel();
+                await firstRun;
+            }
+
+            Assert.Equal(messageCount, received.Count);
+
+            var before = await js.GetConsumerAsync(workQueueStreamName, "a", cts.Token);
+
+            using (var secondRunCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token))
+            {
+                var secondRun = ConsumeIntoAsync(js, streamName, groupName, "a", false, received, secondRunCts.Token);
+                await Task.Delay(1000, cts.Token);
+
+                var after = await js.GetConsumerAsync(workQueueStreamName, "a", cts.Token);
+                Assert.Equal(before.Info.Created, after.Info.Created);
+                Assert.Equal(before.Info.Delivered.StreamSeq, after.Info.Delivered.StreamSeq);
+
+                secondRunCts.Cancel();
+                await secondRun;
+            }
+
+            await js.DeletePcgElasticAsync(streamName, groupName);
+        }
+        finally
+        {
+            await js.DeleteStreamAsync(streamName);
+        }
+    }
+
+    private static Task ConsumeIntoAsync(
+        INatsJSContext js,
+        string streamName,
+        string groupName,
+        string memberName,
+        bool drain,
+        System.Collections.Concurrent.ConcurrentDictionary<string, byte> received,
+        CancellationToken cancellationToken)
+    {
+        return Task.Run(async () =>
+        {
+            try
+            {
+                await foreach (var msg in js.ConsumePcgElasticAsync<string>(streamName, groupName, memberName, drainOnCancel: drain, cancellationToken: cancellationToken))
+                {
+                    received.TryAdd(msg.Data!, 0);
+                    await msg.AckAsync(cancellationToken: CancellationToken.None);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        });
+    }
+
+    // Waits until the received count is non-zero and has not changed for a while.
+    private static async Task WaitForStableCountAsync(System.Collections.Concurrent.ConcurrentDictionary<string, byte> received, CancellationToken cancellationToken)
+    {
+        int stableCount = -1;
+        int stableFor = 0;
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            await Task.Delay(300, cancellationToken);
+            int now = received.Count;
+            if (now == stableCount && now > 0)
+            {
+                stableFor++;
+                if (stableFor >= 5)
+                {
+                    return;
+                }
+            }
+            else
+            {
+                stableCount = now;
+                stableFor = 0;
+            }
         }
     }
 
