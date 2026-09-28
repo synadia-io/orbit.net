@@ -212,32 +212,19 @@ public static class NatsPcgStaticExtensions
         string consumerGroupName,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var consumerName = GetConsumerName(consumerGroupName);
+        var config = await GetPcgStaticConfigAsync(js, streamName, consumerGroupName, cancellationToken).ConfigureAwait(false);
+        var members = NatsPcgPartitionDistributor.GetMemberNames(config.Members, config.MemberMappings);
 
-        ConsumerInfo info;
-        try
+        // Each member has its own consumer on the source stream. A member is active
+        // when its consumer exists and has a pull outstanding (matches orbit.go).
+        await foreach (var consumer in js.ListConsumersAsync(streamName, cancellationToken).ConfigureAwait(false))
         {
-            var consumer = await js.GetConsumerAsync(streamName, consumerName, cancellationToken).ConfigureAwait(false);
-            info = consumer.Info;
-        }
-        catch (NatsJSApiException ex) when (ex.Error.Code == 404)
-        {
-            yield break;
-        }
-
-        if (info.PriorityGroups != null)
-        {
-            foreach (var group in info.PriorityGroups)
+            foreach (var member in members)
             {
-                if (group.PinnedClientId != null)
+                if (consumer.Info.Name == GetMemberConsumerName(consumerGroupName, member) && consumer.Info.NumWaiting != 0)
                 {
-                    // The member name is embedded in the pinned client ID
-                    // Format: {member}-{guid}
-                    var dashIndex = group.PinnedClientId.LastIndexOf('-');
-                    if (dashIndex > 0)
-                    {
-                        yield return group.PinnedClientId.Substring(0, dashIndex);
-                    }
+                    yield return member;
+                    break;
                 }
             }
         }
@@ -258,10 +245,9 @@ public static class NatsPcgStaticExtensions
         string memberName,
         CancellationToken cancellationToken = default)
     {
-        var consumerName = GetConsumerName(consumerGroupName);
+        var consumerName = GetMemberConsumerName(consumerGroupName, memberName);
         var consumer = await js.GetConsumerAsync(streamName, consumerName, cancellationToken).ConfigureAwait(false);
 
-        // Find the priority group for this member and unpin
         await consumer.UnpinAsync(NatsPcgConstants.PriorityGroupName, cancellationToken).ConfigureAwait(false);
     }
 
@@ -289,6 +275,8 @@ public static class NatsPcgStaticExtensions
     internal static string GetKvKey(string streamName, string consumerGroupName)
         => $"{streamName}.{consumerGroupName}";
 
-    internal static string GetConsumerName(string consumerGroupName)
-        => $"pcg-{consumerGroupName}";
+    // Each member gets its own consumer on the source stream, named after the
+    // consumer group and the member. Must match orbit.go's composeStaticConsumerName.
+    internal static string GetMemberConsumerName(string consumerGroupName, string memberName)
+        => $"{consumerGroupName}-{memberName}";
 }

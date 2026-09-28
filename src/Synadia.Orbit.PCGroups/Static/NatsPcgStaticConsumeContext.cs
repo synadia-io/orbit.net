@@ -219,8 +219,7 @@ internal sealed class NatsPcgStaticConsumeContext<T> : IAsyncEnumerable<NatsPcgM
     {
         var filters = GenerateFiltersForMember(_config, _memberName);
 
-        // Each member gets its own consumer (named after consumer group + member)
-        var consumerName = $"{_consumerGroupName}-{_memberName}";
+        var consumerName = NatsPcgStaticExtensions.GetMemberConsumerName(_consumerGroupName, _memberName);
 
         var consumerConfig = new ConsumerConfig(consumerName)
         {
