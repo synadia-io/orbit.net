@@ -78,7 +78,18 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
 
     internal async Task StartAsync(CancellationToken cancellationToken)
     {
-        await CreateOrGetConsumerAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await CreateOrGetConsumerAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (NatsJSApiException ex) when (Array.IndexOf(NatsPcgConstants.ConsumerCreateConflictErrCodes, ex.Error.ErrCode) >= 0)
+        {
+            // Members process a membership change at different times, so a transient
+            // conflict (e.g. another member still holding an overlapping filter) is
+            // expected. Leave the consumer unset; the consume loop self-heals.
+            _consumer = null;
+        }
+
         _watchTask = Task.Run(() => WatchConfigLoopAsync(), CancellationToken.None);
     }
 
@@ -248,7 +259,20 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
                         // Underlying consume completed. When cancelled with DrainOnCancel,
                         // the client has already flushed buffered messages, so finish here
                         // instead of looping back to recreate the consumer.
-                        if (linkedToken.IsCancellationRequested || _js.Connection.Opts.DrainSubscriptionsOnDispose)
+                        if (linkedToken.IsCancellationRequested)
+                        {
+                            yield break;
+                        }
+
+                        // Only this pull was cancelled, by a membership change. With
+                        // DrainOnCancel the consume completes instead of throwing; loop
+                        // back so the consumer is recreated for the new partition set.
+                        if (consumeCts!.IsCancellationRequested)
+                        {
+                            break;
+                        }
+
+                        if (_js.Connection.Opts.DrainSubscriptionsOnDispose)
                         {
                             yield break;
                         }
@@ -301,23 +325,14 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
 
         string[] filters = GenerateFiltersForMember(config, _memberName);
 
-        _currentFilters = filters;
-
         string workQueueStreamName = NatsPcgElasticExtensions.GetWorkQueueStreamName(_streamName, _consumerGroupName);
 
-        var consumerConfig = BuildConsumerConfig(filters);
-
-        try
-        {
-            _consumer = await _js.CreateOrUpdateConsumerAsync(workQueueStreamName, consumerConfig, cancellationToken).ConfigureAwait(false);
-        }
-        catch (NatsJSApiException ex) when (Array.IndexOf(NatsPcgConstants.ConsumerCreateConflictErrCodes, ex.Error.ErrCode) >= 0)
-        {
-            // Consumer might already exist with different filter - try to get it. Match the
-            // specific conflict codes rather than any HTTP 400 so a genuine bad-request is not
-            // swallowed and re-surfaced as a misleading 404 from the get.
-            _consumer = await _js.GetConsumerAsync(workQueueStreamName, _memberName, cancellationToken).ConfigureAwait(false);
-        }
+        // Never update an existing consumer's filters in place: a durable consumer left
+        // from a previous run keeps its stream position, so messages of newly assigned
+        // partitions behind that position would be skipped. An unchanged consumer is
+        // reused as-is; a changed one is deleted and recreated.
+        _consumer = await TryCreateConsumerAsync(workQueueStreamName, filters, cancellationToken).ConfigureAwait(false);
+        _currentFilters = filters;
     }
 
     private async Task RecreateConsumerAsync()
@@ -379,7 +394,7 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
             await Task.Delay(GetMembershipBackoffDelay(), _cts.Token).ConfigureAwait(false);
         }
 
-        _consumer = await TryCreateConsumerAsync(workQueueStreamName, filters).ConfigureAwait(false);
+        _consumer = await TryCreateConsumerAsync(workQueueStreamName, filters, _cts.Token).ConfigureAwait(false);
         _currentFilters = filters;
     }
 
@@ -399,16 +414,17 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
         };
     }
 
-    // Mirrors the Go tryCreateConsumer: create with the desired config; if a consumer
-    // already exists (possibly with stale filters left by another member), delete it and
-    // create again so we end up with the correct position and filters.
-    private async Task<INatsJSConsumer> TryCreateConsumerAsync(string workQueueStreamName, string[] filters)
+    // Mirrors the Go tryCreateConsumer: create with the desired config (the server returns
+    // an existing consumer unchanged when its config is identical); if a consumer already
+    // exists with a different config (possibly stale filters left by us or another member),
+    // delete it and create again so we end up with the correct position and filters.
+    private async Task<INatsJSConsumer> TryCreateConsumerAsync(string workQueueStreamName, string[] filters, CancellationToken cancellationToken)
     {
         var consumerConfig = BuildConsumerConfig(filters);
 
         try
         {
-            return await _js.CreateConsumerAsync(workQueueStreamName, consumerConfig, _cts.Token).ConfigureAwait(false);
+            return await _js.CreateConsumerAsync(workQueueStreamName, consumerConfig, cancellationToken).ConfigureAwait(false);
         }
         catch (NatsJSApiException ex) when (Array.IndexOf(NatsPcgConstants.ConsumerCreateConflictErrCodes, ex.Error.ErrCode) >= 0)
         {
@@ -416,7 +432,7 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
             // another member). Delete it and create again with the desired config.
             try
             {
-                await _js.DeleteConsumerAsync(workQueueStreamName, _memberName, _cts.Token).ConfigureAwait(false);
+                await _js.DeleteConsumerAsync(workQueueStreamName, _memberName, cancellationToken).ConfigureAwait(false);
             }
             catch (NatsJSApiException delEx) when (delEx.Error.Code == 404)
             {
@@ -426,7 +442,7 @@ internal sealed class NatsPcgElasticConsumeContext<T> : IAsyncEnumerable<NatsPcg
             // Second attempt. If another member races us and recreates the consumer in
             // the window between delete and create, this throws; the outer consume loop
             // catches it, backs off, and retries the recreate.
-            return await _js.CreateConsumerAsync(workQueueStreamName, consumerConfig, _cts.Token).ConfigureAwait(false);
+            return await _js.CreateConsumerAsync(workQueueStreamName, consumerConfig, cancellationToken).ConfigureAwait(false);
         }
     }
 
