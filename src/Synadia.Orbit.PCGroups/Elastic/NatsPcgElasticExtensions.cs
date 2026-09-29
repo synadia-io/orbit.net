@@ -242,18 +242,16 @@ public static class NatsPcgElasticExtensions
     {
         var config = await GetPcgElasticConfigAsync(js, streamName, consumerGroupName, cancellationToken).ConfigureAwait(false);
         var members = NatsPcgPartitionDistributor.GetMemberNames(config.Members, config.MemberMappings);
-        if (members.Length == 0)
-        {
-            yield break;
-        }
 
         string workQueueStreamName = GetWorkQueueStreamName(streamName, consumerGroupName);
 
         // Each member has its own consumer, named after the member, on the work-queue
-        // stream. A member is active when that consumer exists (matches orbit.go).
+        // stream, which belongs to this group alone. A member is active when that
+        // consumer exists (matches orbit.go). With open membership (no members or
+        // mappings configured) any consumer on the stream is an active member.
         await foreach (var consumerName in js.ListConsumerNamesAsync(workQueueStreamName, cancellationToken).ConfigureAwait(false))
         {
-            if (Array.IndexOf(members, consumerName) >= 0)
+            if (members.Length == 0 || Array.IndexOf(members, consumerName) >= 0)
             {
                 yield return consumerName;
             }

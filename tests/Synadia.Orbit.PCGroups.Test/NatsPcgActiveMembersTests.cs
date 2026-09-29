@@ -164,6 +164,73 @@ public class NatsPcgActiveMembersTests
         }
     }
 
+    [Fact]
+    public async Task OpenMembership_ListsConsumingMembers()
+    {
+        // No members or mappings configured: any name may consume, and the
+        // listing reports whoever has a consumer.
+        await using var nats = new NatsConnection(new NatsOpts { Url = _server.Url });
+        var js = nats.CreateJetStreamContext();
+
+        var id = Guid.NewGuid().ToString("N");
+        var groupName = $"test-group-{id}";
+        var elasticStream = $"test-stream-e-{id}";
+        var staticStream = $"test-stream-s-{id}";
+        var subject = $"om{id}";
+
+        await js.CreateStreamAsync(new StreamConfig { Name = elasticStream, Subjects = [$"{subject}.e.*"] });
+        await js.CreateStreamAsync(new StreamConfig
+        {
+            Name = staticStream,
+            Subjects = [$"{subject}.s.*"],
+            SubjectTransform = new SubjectTransform
+            {
+                Src = $"{subject}.s.*",
+                Dest = $"{{{{partition(1,1)}}}}.{subject}.s.{{{{wildcard(1)}}}}",
+            },
+        });
+
+        try
+        {
+            await js.CreatePcgElasticAsync(elasticStream, groupName, 1, [new NatsPcgPartitioningFilter($"{subject}.e.*", [1])]);
+            await js.CreatePcgStaticAsync(staticStream, groupName, 1, [$"{subject}.s.*"]);
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var received = 0;
+            var elastic = ConsumeAsync(
+                js.ConsumePcgElasticAsync<string>(elasticStream, groupName, "worker-1", cancellationToken: cts.Token),
+                () => Interlocked.Increment(ref received),
+                cts.Token);
+            var stat = ConsumeAsync(
+                js.ConsumePcgStaticAsync<string>(staticStream, groupName, "worker-1", cancellationToken: cts.Token),
+                () => Interlocked.Increment(ref received),
+                cts.Token);
+
+            await PublishAsync(js, $"{subject}.e", 0, 5);
+            await PublishAsync(js, $"{subject}.s", 0, 5);
+            await WaitAsync(() => Volatile.Read(ref received) >= 10, "messages", cts.Token);
+
+            await WaitAsync(
+                async () => (await ToListAsync(js.ListPcgElasticActiveMembersAsync(elasticStream, groupName))).Count == 1
+                    && (await ToListAsync(js.ListPcgStaticActiveMembersAsync(staticStream, groupName))).Count == 1,
+                "active members",
+                cts.Token);
+            Assert.Equal(["worker-1"], await ToListAsync(js.ListPcgElasticActiveMembersAsync(elasticStream, groupName)));
+            Assert.Equal(["worker-1"], await ToListAsync(js.ListPcgStaticActiveMembersAsync(staticStream, groupName)));
+            Assert.Equal((true, true), await js.IsInPcgElasticMembershipAndActiveAsync(elasticStream, groupName, "worker-1"));
+
+            cts.Cancel();
+            await Task.WhenAll(elastic, stat);
+            await js.DeletePcgElasticAsync(elasticStream, groupName);
+            await js.DeletePcgStaticAsync(staticStream, groupName);
+        }
+        finally
+        {
+            await js.DeleteStreamAsync(elasticStream);
+            await js.DeleteStreamAsync(staticStream);
+        }
+    }
+
     private static async Task PublishAsync(INatsJSContext js, string subject, int from, int count)
     {
         for (var i = from; i < from + count; i++)

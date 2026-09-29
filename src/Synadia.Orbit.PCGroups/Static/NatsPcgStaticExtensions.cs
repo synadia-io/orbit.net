@@ -214,18 +214,24 @@ public static class NatsPcgStaticExtensions
     {
         var config = await GetPcgStaticConfigAsync(js, streamName, consumerGroupName, cancellationToken).ConfigureAwait(false);
         var members = NatsPcgPartitionDistributor.GetMemberNames(config.Members, config.MemberMappings);
+        var prefix = GetMemberConsumerName(consumerGroupName, string.Empty);
 
         // Each member has its own consumer on the source stream. A member is active
         // when its consumer exists and has a pull outstanding (matches orbit.go).
+        // With open membership (no members or mappings configured) any consumer
+        // of this group is an active member.
         await foreach (var consumer in js.ListConsumersAsync(streamName, cancellationToken).ConfigureAwait(false))
         {
-            foreach (var member in members)
+            var name = consumer.Info.Name;
+            if (consumer.Info.NumWaiting == 0 || !name.StartsWith(prefix, StringComparison.Ordinal))
             {
-                if (consumer.Info.Name == GetMemberConsumerName(consumerGroupName, member) && consumer.Info.NumWaiting != 0)
-                {
-                    yield return member;
-                    break;
-                }
+                continue;
+            }
+
+            var member = name.Substring(prefix.Length);
+            if (members.Length == 0 || Array.IndexOf(members, member) >= 0)
+            {
+                yield return member;
             }
         }
     }
