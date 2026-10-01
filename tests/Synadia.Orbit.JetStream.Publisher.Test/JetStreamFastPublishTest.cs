@@ -1,6 +1,7 @@
 // Copyright (c) Synadia Communications, Inc. All rights reserved.
 // Licensed under the Apache License, Version 2.0.
 
+using System.Text;
 using NATS.Client.Core;
 using NATS.Client.JetStream.Models;
 using NATS.Net;
@@ -52,6 +53,7 @@ public class JetStreamFastPublishTest
 
         Assert.NotNull(commitAck);
         Assert.Equal(3, commitAck.BatchSize);
+        Assert.Equal(commitAck.BatchSize, batch.Size);
         Assert.NotEmpty(commitAck.BatchId);
         Assert.Equal(streamName, commitAck.Stream);
         Assert.True(batch.IsClosed);
@@ -132,6 +134,7 @@ public class JetStreamFastPublishTest
         var commitAck = await batch.CloseAsync(ct);
 
         Assert.Equal(2, commitAck.BatchSize);
+        Assert.Equal(commitAck.BatchSize, batch.Size);
         Assert.True(batch.IsClosed);
 
         await Assert.ThrowsAsync<NatsJSBatchClosedException>(
@@ -228,5 +231,188 @@ public class JetStreamFastPublishTest
 
         await Assert.ThrowsAnyAsync<Exception>(
             async () => await batch.AddAsync($"{subject}.1", "msg"u8.ToArray(), cancellationToken: ct));
+    }
+
+    [Fact]
+    public async Task Fast_batch_no_responders_reported_not_swallowed()
+    {
+        await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 14), $"Server version {connection.ServerInfo?.Version} does not support fast batch publish (requires 2.14+)");
+
+        var js = connection.CreateJetStreamContext();
+        var prefix = _server.GetNextId();
+        var subject = $"{prefix}test";
+
+        var ct = TestContext.Current.CancellationToken;
+
+        // No stream captures the subject, so the first message's reply reaches no interest and
+        // the server answers 503. It arrives on the control channel as an ordinary status
+        // message, not through RequestAsync, so nothing raises it for us.
+        var errors = new List<Exception>();
+        await using var batch = js.CreateOrbitFastPublisher(new NatsJSFastPublisherOpts
+        {
+            ErrorHandler = ex =>
+            {
+                lock (errors)
+                {
+                    errors.Add(ex);
+                }
+            },
+            FlowControl = new NatsJSFastPublishFlowControl { AckTimeout = TimeSpan.FromSeconds(10) },
+        });
+
+        await Assert.ThrowsAsync<NatsNoRespondersException>(
+            async () => await batch.AddAsync($"{subject}.1", "msg"u8.ToArray(), cancellationToken: ct));
+
+        lock (errors)
+        {
+            Assert.Contains(errors, e => e is NatsNoRespondersException);
+        }
+
+        Assert.True(batch.IsClosed);
+    }
+
+    [Fact]
+    public async Task Fast_batch_terminal_ack_reported_when_server_ends_batch()
+    {
+        await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 14), $"Server version {connection.ServerInfo?.Version} does not support fast batch publish (requires 2.14+)");
+
+        var js = connection.CreateJetStreamContext();
+        var prefix = _server.GetNextId();
+        var streamName = $"{prefix}TEST";
+        var subject = $"{prefix}test";
+
+        var ct = TestContext.Current.CancellationToken;
+
+        await js.CreateStreamAsync(
+            new StreamConfig(streamName, [$"{subject}.>"]) { AllowBatchPublish = true },
+            ct);
+
+        var errors = new List<Exception>();
+        var terminal = new TaskCompletionSource<Exception>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // Default gap mode is "fail", so a failed per-message expectation ends the batch: the
+        // server sends a BatchFlowErr and then a terminal ack. Nobody is awaiting a commit, so
+        // before the fix the terminal ack was dropped on the floor.
+        await using var batch = js.CreateOrbitFastPublisher(new NatsJSFastPublisherOpts
+        {
+            ErrorHandler = ex =>
+            {
+                lock (errors)
+                {
+                    errors.Add(ex);
+                }
+
+                if (ex is not NatsJSFastPublishMessageException)
+                {
+                    terminal.TrySetResult(ex);
+                }
+            },
+        });
+
+        await batch.AddAsync($"{subject}.1", "message 1"u8.ToArray(), cancellationToken: ct);
+
+        // Expect a last sequence the stream cannot be at.
+        await batch.AddAsync(
+            $"{subject}.2",
+            "message 2"u8.ToArray(),
+            new NatsJSBatchMsgOpts { LastSeq = 999999 },
+            cancellationToken: ct);
+
+        var completed = await Task.WhenAny(terminal.Task, Task.Delay(TimeSpan.FromSeconds(10), ct));
+        Assert.True(completed == terminal.Task, $"No terminal report; saw: {string.Join(", ", errors.Select(e => e.GetType().Name))}");
+
+        _output.WriteLine($"terminal: {await terminal.Task}");
+    }
+
+    [Fact]
+    public async Task Fast_batch_no_responders_on_commit_fails_fast_in_gap_ok_mode()
+    {
+        await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 14), $"Server version {connection.ServerInfo?.Version} does not support fast batch publish (requires 2.14+)");
+
+        var js = connection.CreateJetStreamContext();
+        var prefix = _server.GetNextId();
+        var streamName = $"{prefix}TEST";
+        var subject = $"{prefix}test";
+
+        var ct = TestContext.Current.CancellationToken;
+
+        await js.CreateStreamAsync(
+            new StreamConfig(streamName, [$"{subject}.>"]) { AllowBatchPublish = true },
+            ct);
+
+        // "ok" gap mode tolerates a 503 on an add, because the next add that does reach the
+        // stream is answered with a gap report. A commit has no next message, so tolerating it
+        // would only get the caller a timeout once the ack never arrives.
+        await using var batch = js.CreateOrbitFastPublisher(new NatsJSFastPublisherOpts
+        {
+            ContinueOnGap = true,
+            FlowControl = new NatsJSFastPublishFlowControl { AckTimeout = TimeSpan.FromSeconds(10) },
+        });
+
+        await batch.AddAsync($"{subject}.1", "message 1"u8.ToArray(), cancellationToken: ct);
+
+        // Committing to a subject the stream does not capture.
+        await Assert.ThrowsAsync<NatsNoRespondersException>(
+            async () => await batch.CommitAsync($"{prefix}uncaptured", "final"u8.ToArray(), cancellationToken: ct));
+
+        Assert.True(batch.IsClosed);
+    }
+
+    [Fact]
+    public async Task Fast_batch_ping_sequence_is_the_last_published_one()
+    {
+        await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 14), $"Server version {connection.ServerInfo?.Version} does not support fast batch publish (requires 2.14+)");
+
+        var js = connection.CreateJetStreamContext();
+        var prefix = _server.GetNextId();
+        var streamName = $"{prefix}TEST";
+        var subject = $"{prefix}test";
+
+        var ct = TestContext.Current.CancellationToken;
+
+        await js.CreateStreamAsync(
+            new StreamConfig(streamName, [subject]) { AllowBatchPublish = true },
+            ct);
+
+        // Drive the wire protocol by hand to pin down what a ping's sequence means to the
+        // server: a ping ahead of what the server has received is a gap, and in the default
+        // "fail" gap mode that ends the batch. The publisher stalls after taking the next
+        // sequence but before publishing it, so pinging with _sequence would always be ahead.
+        var inbox = $"_FB.{prefix}ping";
+        await using var sub = await connection.SubscribeCoreAsync<byte[]>($"{inbox}.>", cancellationToken: ct);
+
+        string Reply(int seq, int op) => $"{inbox}.2.fail.{seq}.{op}.$FI";
+
+        async Task<string> NextAsync()
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(5));
+            var msg = await sub.Msgs.ReadAsync(cts.Token);
+            return Encoding.UTF8.GetString(msg.Data ?? []);
+        }
+
+        await connection.PublishAsync(subject, "one"u8.ToArray(), replyTo: Reply(1, 0), cancellationToken: ct);
+        Assert.Contains("\"type\":\"ack\"", await NextAsync());
+
+        await connection.PublishAsync(subject, "two"u8.ToArray(), replyTo: Reply(2, 1), cancellationToken: ct);
+        Assert.Contains("\"type\":\"ack\"", await NextAsync());
+
+        // A ping carrying the last published sequence is answered with a flow ack only.
+        await connection.PublishAsync(subject, ReadOnlyMemory<byte>.Empty, replyTo: Reply(2, 4), cancellationToken: ct);
+        var onTime = await NextAsync();
+        Assert.DoesNotContain("\"type\":\"gap\"", onTime);
+        Assert.Contains("\"type\":\"ack\"", onTime);
+
+        // One ahead, which is what the publisher used to send, is a gap.
+        await connection.PublishAsync(subject, ReadOnlyMemory<byte>.Empty, replyTo: Reply(3, 4), cancellationToken: ct);
+        Assert.Contains("\"type\":\"gap\"", await NextAsync());
     }
 }
