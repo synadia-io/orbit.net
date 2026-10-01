@@ -701,4 +701,98 @@ public class JetStreamBatchPublishTest
 
         await Assert.ThrowsAsync<NatsJSBatchClosedException>(async () => await batch.CloseAsync(ct));
     }
+
+    [Fact]
+    public async Task Batch_expected_last_sequence_rejected_after_first_message()
+    {
+        await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 12), $"Server version {connection.ServerInfo?.Version} does not support batch publish (requires 2.12+)");
+
+        var js = connection.CreateJetStreamContext();
+        var prefix = _server.GetNextId();
+        var streamName = $"{prefix}TEST";
+        var subject = $"{prefix}test";
+
+        var ct = TestContext.Current.CancellationToken;
+
+        await js.CreateStreamAsync(
+            new StreamConfig(streamName, [$"{subject}.>"]) { AllowAtomicPublish = true },
+            ct);
+
+        await using var batch = new NatsJSBatchPublisher(js);
+
+        // Allowed on the first message.
+        await batch.AddAsync($"{subject}.1", "message 1"u8.ToArray(), new NatsJSBatchMsgOpts { LastSeq = 0 }, cancellationToken: ct);
+
+        // ADR-50 allows it only on the first message; the server would kill the whole batch.
+        await Assert.ThrowsAsync<ArgumentException>(
+            async () => await batch.AddAsync($"{subject}.2", "message 2"u8.ToArray(), new NatsJSBatchMsgOpts { LastSeq = 1 }, cancellationToken: ct));
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            async () => await batch.CommitAsync($"{subject}.3", "message 3"u8.ToArray(), new NatsJSBatchMsgOpts { LastSeq = 1 }, cancellationToken: ct));
+
+        // The rejected messages must not have consumed a batch sequence.
+        Assert.Equal(1, batch.Size);
+
+        var ack = await batch.CommitAsync($"{subject}.2", "message 2"u8.ToArray(), cancellationToken: ct);
+        Assert.Equal(2, ack.BatchSize);
+    }
+
+    [Fact]
+    public async Task Batch_rejects_unsupported_and_protocol_headers()
+    {
+        await using var connection = new NatsConnection(new NatsOpts { Url = _server.Url });
+        await connection.ConnectAsync();
+        Assert.SkipUnless(connection.HasMinServerVersion(2, 12), $"Server version {connection.ServerInfo?.Version} does not support batch publish (requires 2.12+)");
+
+        var js = connection.CreateJetStreamContext();
+        var prefix = _server.GetNextId();
+        var streamName = $"{prefix}TEST";
+        var subject = $"{prefix}test";
+
+        var ct = TestContext.Current.CancellationToken;
+
+        await js.CreateStreamAsync(
+            new StreamConfig(streamName, [$"{subject}.>"]) { AllowAtomicPublish = true },
+            ct);
+
+        await using var batch = new NatsJSBatchPublisher(js);
+
+        // Refused by the server inside a batch with 10177.
+        await Assert.ThrowsAsync<ArgumentException>(async () => await batch.AddMsgAsync(
+            new NatsMsg<byte[]>
+            {
+                Subject = $"{subject}.1",
+                Data = "msg"u8.ToArray(),
+                Headers = new NatsHeaders { { "Nats-Expected-Last-Msg-Id", "abc" } },
+            },
+            cancellationToken: ct));
+
+        // Would survive the header clone on an add and commit the batch early.
+        await Assert.ThrowsAsync<ArgumentException>(async () => await batch.AddMsgAsync(
+            new NatsMsg<byte[]>
+            {
+                Subject = $"{subject}.1",
+                Data = "msg"u8.ToArray(),
+                Headers = new NatsHeaders { { NatsJSBatchHeaders.BatchCommit, "1" } },
+            },
+            cancellationToken: ct));
+
+        // Raw header, not just the typed option.
+        await batch.AddAsync($"{subject}.1", "msg"u8.ToArray(), cancellationToken: ct);
+        await Assert.ThrowsAsync<ArgumentException>(async () => await batch.AddMsgAsync(
+            new NatsMsg<byte[]>
+            {
+                Subject = $"{subject}.2",
+                Data = "msg"u8.ToArray(),
+                Headers = new NatsHeaders { { "Nats-Expected-Last-Sequence", "1" } },
+            },
+            cancellationToken: ct));
+
+        Assert.Equal(1, batch.Size);
+
+        var ack = await batch.CommitAsync($"{subject}.2", "msg"u8.ToArray(), cancellationToken: ct);
+        Assert.Equal(2, ack.BatchSize);
+    }
 }
