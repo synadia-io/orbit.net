@@ -144,4 +144,20 @@ public static class NatsPcgPartitionDistributor
         // No membership restrictions - any member can join
         return true;
     }
+
+    /// <summary>
+    /// Gets the configured member names, from the member mappings when set, otherwise from the members list.
+    /// </summary>
+    /// <param name="members">The list of members.</param>
+    /// <param name="memberMappings">The member mappings.</param>
+    /// <returns>The member names, or an empty array when neither is configured.</returns>
+    public static string[] GetMemberNames(string[]? members, NatsPcgMemberMapping[]? memberMappings)
+    {
+        if (memberMappings is { Length: > 0 })
+        {
+            return Array.ConvertAll(memberMappings, m => m.Member);
+        }
+
+        return members ?? Array.Empty<string>();
+    }
 }

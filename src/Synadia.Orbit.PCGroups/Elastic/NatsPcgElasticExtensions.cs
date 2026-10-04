@@ -240,34 +240,20 @@ public static class NatsPcgElasticExtensions
         string consumerGroupName,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        var config = await GetPcgElasticConfigAsync(js, streamName, consumerGroupName, cancellationToken).ConfigureAwait(false);
+        var members = NatsPcgPartitionDistributor.GetMemberNames(config.Members, config.MemberMappings);
+
         string workQueueStreamName = GetWorkQueueStreamName(streamName, consumerGroupName);
-        string consumerName = GetConsumerName(consumerGroupName);
 
-        ConsumerInfo info;
-        try
+        // Each member has its own consumer, named after the member, on the work-queue
+        // stream, which belongs to this group alone. A member is active when that
+        // consumer exists (matches orbit.go). With open membership (no members or
+        // mappings configured) any consumer on the stream is an active member.
+        await foreach (var consumerName in js.ListConsumerNamesAsync(workQueueStreamName, cancellationToken).ConfigureAwait(false))
         {
-            var consumer = await js.GetConsumerAsync(workQueueStreamName, consumerName, cancellationToken).ConfigureAwait(false);
-            info = consumer.Info;
-        }
-        catch (NatsJSApiException ex) when (ex.Error.Code == 404)
-        {
-            yield break;
-        }
-
-        if (info.PriorityGroups != null)
-        {
-            foreach (var group in info.PriorityGroups)
+            if (members.Length == 0 || Array.IndexOf(members, consumerName) >= 0)
             {
-                if (group.PinnedClientId != null)
-                {
-                    // The member name is embedded in the pinned client ID
-                    // Format: {member}-{guid}
-                    int dashIndex = group.PinnedClientId.LastIndexOf('-');
-                    if (dashIndex > 0)
-                    {
-                        yield return group.PinnedClientId.Substring(0, dashIndex);
-                    }
-                }
+                yield return consumerName;
             }
         }
     }
@@ -503,8 +489,9 @@ public static class NatsPcgElasticExtensions
         CancellationToken cancellationToken = default)
     {
         var workQueueStreamName = GetWorkQueueStreamName(streamName, consumerGroupName);
-        var consumerName = GetConsumerName(consumerGroupName);
-        var consumer = await js.GetConsumerAsync(workQueueStreamName, consumerName, cancellationToken).ConfigureAwait(false);
+
+        // Each member's consumer on the work-queue stream is named after the member.
+        var consumer = await js.GetConsumerAsync(workQueueStreamName, memberName, cancellationToken).ConfigureAwait(false);
 
         await consumer.UnpinAsync(NatsPcgConstants.PriorityGroupName, cancellationToken).ConfigureAwait(false);
     }
@@ -692,7 +679,4 @@ public static class NatsPcgElasticExtensions
 
     internal static string GetWorkQueueStreamName(string streamName, string consumerGroupName)
         => $"{streamName}-{consumerGroupName}";
-
-    internal static string GetConsumerName(string consumerGroupName)
-        => $"pcg-{consumerGroupName}";
 }
